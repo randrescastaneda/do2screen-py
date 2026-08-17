@@ -1,0 +1,52 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "do2screen-py"
+version = "0.1.0"
+description = "Trace how a variable is built inside a Stata do file."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { file = "LICENSE" }
+keywords = ["stata", "do-file", "trace", "audit"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Scientific/Engineering",
+]
+dependencies = [
+    "pydantic>=2,<3",
+]
+
+[project.optional-dependencies]
+# stata-command-registry is not yet published to PyPI under this distribution
+# name. Until it is, it is an optional extra: install and run all unit tests
+# without it; the registry adapter degrades gracefully at runtime.
+registry = ["stata-command-registry>=0.1,<1.0"]
+test = ["pytest"]
+dev = ["pytest", "build"]
+
+[project.scripts]
+do2screen = "do2screen.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools]
+include-package-data = true
+
+[tool.setuptools.package-data]
+do2screen = ["py.typed"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra"
+
+[tool.ruff]
+line-length = 100
