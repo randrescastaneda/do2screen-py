@@ -1,0 +1,39 @@
+{
+  "schemaVersion": "compound-gpid-roadmap-v1",
+  "milestones": [
+    {
+      "id": "initial-scaffolding-and-core-pipeline",
+      "title": "Set up project structure, implement core parsing pipeline, and establish differential testing.",
+      "objective": "Set up project structure, implement core parsing pipeline, and establish differential testing.",
+      "status": "planned",
+      "features": [
+        {
+          "id": "initial-focus",
+          "title": "Set up project structure, implement core parsing pipeline, and establish differential testing.",
+          "status": "done",
+          "plan": ".cg-docs/plans/2026-08-17-do2screen-py-parser-pipeline.md"
+        }
+      ]
+    },
+    {
+      "id": "cross-cutting-infrastructure-prerequisites",
+      "title": "Cross-cutting infrastructure prerequisites for do2screen-py",
+      "objective": "Resolve upstream and testing infrastructure dependencies that enable full do2screen-py functionality and verifiable correctness.",
+      "status": "planned",
+      "features": [
+        {
+          "id": "registry-publication-prereq",
+          "title": "Publish stata-command-registry to PyPI with variable_effect support",
+          "status": "planned",
+          "plan": null
+        },
+        {
+          "id": "differential-snapshot-infra",
+          "title": "Stata output snapshot infrastructure for CI-runnable differential testing",
+          "status": "planned",
+          "plan": null
+        }
+      ]
+    }
+  ]
+}
