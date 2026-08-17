@@ -1,0 +1,7 @@
+{
+  "fixture": "golden_rename_label.do",
+  "variables": {
+    "hhsize": {"ranges": [5, 6], "ancestors": ["household_size"]},
+    "household_size": {"ranges": [4], "ancestors": []}
+  }
+}
