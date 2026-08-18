@@ -1,0 +1,191 @@
+{
+  "edge_count": 2,
+  "edges": [
+    {
+      "edge_type": "reviews",
+      "source": ".cg-docs/reviews/2026-08-17-do2screen-py-parser-pipeline-review.md",
+      "target": ".cg-docs/plans/2026-08-17-do2screen-py-parser-pipeline.md",
+      "target_missing": false
+    },
+    {
+      "edge_type": "verifies",
+      "source": ".cg-docs/reviews/2026-08-17-do2screen-py-parser-pipeline-verify-review.md",
+      "target": ".cg-docs/reviews/2026-08-17-do2screen-py-parser-pipeline-review.md",
+      "target_missing": false
+    }
+  ],
+  "entities": [
+    {
+      "date": "2026-08-17",
+      "entity_type": "plan",
+      "path": ".cg-docs/plans/2026-08-17-do2screen-py-parser-pipeline.md",
+      "slug": "2026-08-17-do2screen-py-parser-pipeline",
+      "status": "completed",
+      "summary": "Build do2screen-py from scratch as a Python 3.10+ library and JSON CLI that traces variable construction inside Stata do files, reporting physical source line ranges. Derived from the detailed implementation plan at `.kilo/plans/1786843909688-do2screen-py-parser.md`.",
+      "tags": [
+        "parser",
+        "stata",
+        "tracing",
+        "pydantic",
+        "cli"
+      ],
+      "title": "do2screen-py core parsing pipeline",
+      "top_keywords": [
+        "test scenarios",
+        "agents.md",
+        "stata-command-registry",
+        "traceresult",
+        "unsupported_effect",
+        "unsupported_syntax",
+        "phase",
+        "variable_effect",
+        "do2screen_stata_bin",
+        "variabletrace"
+      ]
+    },
+    {
+      "date": "2026-08-17",
+      "entity_type": "review",
+      "path": ".cg-docs/reviews/2026-08-17-do2screen-py-parser-pipeline-review.md",
+      "slug": "2026-08-17-do2screen-py-parser-pipeline-review",
+      "status": "",
+      "summary": "**Review mode**: architecture **Files reviewed**: src/do2screen/*.py, tests/*.py, tests/fixtures/, tests/differential/, pyproject.toml, README.md, .gitignore **Findings**: 30 (P0: 0, P1: 6, P2: 8, P3: 16)",
+      "tags": [],
+      "title": "2026-08-17-do2screen-py-parser-pipeline-review",
+      "top_keywords": [
+        "fix",
+        "review",
+        ".kilo/plans/",
+        "readme.md",
+        "parser.py",
+        "test_parser.py",
+        "parser",
+        "architecture",
+        "passed",
+        "stata-command-registry"
+      ]
+    },
+    {
+      "date": "2026-08-17",
+      "entity_type": "review",
+      "path": ".cg-docs/reviews/2026-08-17-do2screen-py-parser-pipeline-verify-review.md",
+      "slug": "2026-08-17-do2screen-py-parser-pipeline-verify-review",
+      "status": "",
+      "summary": "**Verification mode**: light depth following fix-triage of `.cg-docs/reviews/2026-08-17-do2screen-py-parser-pipeline-review.md`. **Agents**: cg-code-quality, cg-testing. **Suite**: 231 passed, 4 skipped (3 registry-conformance, 1 opt-in live differential); ruff clean.",
+      "tags": [],
+      "title": "2026-08-17-do2screen-py-parser-pipeline-verify-review",
+      "top_keywords": [
+        "parser.py",
+        "verify",
+        "test_models.py",
+        "test_parser.py",
+        "test_statements.py",
+        "2026-08-17-do2screen-py-parser-pipeline-review.md",
+        "parser",
+        "findings",
+        "verification",
+        "mode"
+      ]
+    },
+    {
+      "date": "2026-08-17",
+      "entity_type": "solution",
+      "path": ".cg-docs/solutions/testing-patterns/2026-08-17-no-dropped-lines-invariant-and-source-aware-coverage.md",
+      "slug": "2026-08-17-no-dropped-lines-invariant-and-source-aware-coverage",
+      "status": "",
+      "summary": "`do2screen-py` reimplements the do2screen (Stata) tracer: it reads a Stata do file and reports the physical lines that create/modify/drop/label a variable. The hard contract (AGENTS.md section 3.1) says **every** non-blank, non-comment line must end up in exactly one of two places: attributed to a variable, or recorded in `unresolved_blocks`. An empty result is ambiguous — it can mean \"the variable was never touched\" (information) or \"the parser did not understand the code\" (a lie). A first implementation asserted the invariant against parser-maintained bookkeeping fields (`attributed_lines` / `unresolved_lines`), which are updated in the same code paths that append the contract records....",
+      "tags": [
+        "parser",
+        "testing",
+        "invariant",
+        "coverage",
+        "pydantic",
+        "do2screen"
+      ],
+      "title": "Guarding a lossless static parser with a no-dropped-lines invariant",
+      "top_keywords": [
+        "invariant",
+        "parser",
+        "include",
+        "(source, line)",
+        "coverage",
+        "static",
+        "guarding",
+        "lossless",
+        "no-dropped-lines",
+        "attributed"
+      ]
+    },
+    {
+      "date": "",
+      "entity_type": "feature",
+      "path": "roadmap.json#initial-focus",
+      "slug": "initial-focus",
+      "status": "done",
+      "summary": "Set up project structure, implement core parsing pipeline, and establish differential testing.",
+      "tags": [],
+      "title": "Set up project structure, implement core parsing pipeline, and establish differential testing.",
+      "top_keywords": [
+        "project",
+        "structure",
+        "implement",
+        "core",
+        "parsing",
+        "pipeline",
+        "establish",
+        "differential",
+        "testing",
+        "feature"
+      ]
+    },
+    {
+      "date": "",
+      "entity_type": "feature",
+      "path": "roadmap.json#registry-publication-prereq",
+      "slug": "registry-publication-prereq",
+      "status": "planned",
+      "summary": "Publish stata-command-registry to PyPI with variable_effect support",
+      "tags": [],
+      "title": "Publish stata-command-registry to PyPI with variable_effect support",
+      "top_keywords": [
+        "publish",
+        "stata-command-registry",
+        "pypi",
+        "variable_effect",
+        "support",
+        "infrastructure",
+        "do2screen-py",
+        "feature",
+        "milestone",
+        "cross-cutting"
+      ]
+    },
+    {
+      "date": "",
+      "entity_type": "feature",
+      "path": "roadmap.json#differential-snapshot-infra",
+      "slug": "differential-snapshot-infra",
+      "status": "planned",
+      "summary": "Stata output snapshot infrastructure for CI-runnable differential testing",
+      "tags": [],
+      "title": "Stata output snapshot infrastructure for CI-runnable differential testing",
+      "top_keywords": [
+        "infrastructure",
+        "testing",
+        "stata",
+        "snapshot",
+        "ci-runnable",
+        "differential",
+        "do2screen-py",
+        "feature",
+        "milestone",
+        "cross-cutting"
+      ]
+    }
+  ],
+  "entity_count": 7,
+  "generated": "2026-08-17",
+  "schema_version": "0.2.0",
+  "topic_count": 0,
+  "topics": []
+}

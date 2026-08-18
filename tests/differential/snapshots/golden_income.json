@@ -1,0 +1,8 @@
+{
+  "fixture": "golden_income.do",
+  "variables": {
+    "income": {"ranges": [6, 7], "ancestors": ["wages", "transfers"]},
+    "wages": {"ranges": [4, 8], "ancestors": []},
+    "transfers": {"ranges": [5], "ancestors": []}
+  }
+}
