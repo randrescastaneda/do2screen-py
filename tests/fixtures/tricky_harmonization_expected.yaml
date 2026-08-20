@@ -1,0 +1,257 @@
+# Answer key for tricky_harmonization.do
+#
+# Line numbers refer to that file exactly as committed. If you edit the fixture,
+# this file is invalidated.
+#
+# Classification vocabulary matches do2screen-py's TraceResult:
+#   create / modify / drop / label / reference / unresolved
+#
+# Entries marked "verify_against_stata: true" are cases where I am asserting
+# what SHOULD happen, but do2screen (Stata) is the authority. If the Stata
+# implementation disagrees, match Stata and correct this file. Fidelity to the
+# reference implementation outranks my judgement.
+
+fixture: tricky_harmonization.do
+total_lines: 228
+
+# ---------------------------------------------------------------------------
+variables:
+
+  # The substring isolation test. The single most valuable case in the file.
+  # A naive matcher will pull in educat, educat4, educat5, educat7,
+  # educat7_orig, tmp_educ, educ_stage1, final_educ, max_educ.
+  educ:
+    create: [24]
+    modify: []
+    reference: []
+    ancestors: [p301a]
+    unresolved: []
+    note: >
+      Exactly one line. Any other line in the result is a word boundary defect.
+
+  educat7:
+    create: [28]
+    modify: [38, 39, 40, 147]
+    label: [66]
+    reference: [76, 79, 125, 148, 156, 178, 179, 181, 226]
+    unresolved: [190, 191]
+    ancestors: [p301a, p301b]
+    must_not_include: [49, 51, 52, 55, 68]
+    notes:
+      line_147: >
+        recode without generate() modifies in place. This is a modify.
+      line_148: >
+        recode WITH generate() reads educat7 and creates educat5_alt. This is a
+        reference for educat7, not a modify. Getting this backwards is the most
+        likely single error in the file.
+      line_66: >
+        label var. The variable name also appears inside the string literal on
+        the same line, which must not produce a second hit.
+      must_not_include: >
+        49 is a * comment, 51 a trailing // comment, 52 a single line block
+        comment, 55 inside a multiline block comment, 68 inside a string.
+
+  educat4:
+    create: [26, 75]
+    modify: [78]
+    reference: [180, 226]
+    ancestors: [educat7, age]
+    must_not_include: [67]
+    notes:
+      line_75: >
+        Statement spans 75 to 76 via ///. Report the statement, however your
+        line range convention expresses that. Deliberately a second creation of
+        an existing variable: Stata would error at runtime, the parser must not.
+      line_78: >
+        Statement spans 78 to 80 via two continuations.
+      line_67: inside a string literal on a di command.
+
+  urban:
+    create: [53]
+    modify: [58]
+    label: [160]
+    reference: [178, 179, 181, 226]
+    unresolved: [190]
+    ancestors: [strata]
+    note: >
+      Line 178 is i.urban, factor variable notation. A reference, not a modify.
+
+  # Rename chain. The hardest ancestry case in the file.
+  final_educ:
+    create: [125]
+    modify: [127, 129]
+    rename: [126, 128]
+    reference: [226]
+    ancestors: [educat7, p301a, p301b]
+    verify_against_stata: true
+    note: >
+      Lineage is gen tmp_educ (125) -> rename to educ_stage1 (126) -> replace
+      (127) -> rename to final_educ (128) -> replace (129). Whether do2screen
+      (Stata) follows rename chains backwards is the thing to confirm. If it
+      does not, match it and file an enhancement issue rather than diverging.
+
+  # Self reference. Recursion must terminate.
+  income_total:
+    create: [137]
+    modify: [138, 139]
+    reference: [155]
+    ancestors: [wage_monthly, transfers]
+    note: >
+      Lines 138 and 139 read income_total to write income_total. Must not
+      recurse infinitely and must not list income_total as its own ancestor.
+
+  # Prefix stripping.
+  hhsize:
+    create: [88]
+    modify: [93]
+    ancestors: []
+    note: >
+      88 is prefixed by bysort, 93 by "by hhid:". The creating command is not
+      the first token on either line.
+
+  head:
+    create: [90]
+    modify: [92]
+    ancestors: [relationharm]
+    note: 90 uses quietly, 92 uses the abbreviation qui.
+
+  # Delimiter switching.
+  male:
+    create: [200]
+    modify: [203]
+    reference: [190, 226]
+    ancestors: [sex]
+    note: >
+      Under #delimit ; a statement runs until the semicolon. 200 to 201 is one
+      statement, 203 to 204 is another. Newlines are not terminators here.
+
+  age_group:
+    create: [206]
+    modify: [206]
+    ancestors: [age]
+    note: >
+      Two complete statements on one physical line, separated by ;. Both a
+      create and a modify at the same line number.
+
+  # THE CRITICAL CASE. Absence is not an acceptable answer.
+  educat_lev4:
+    create: []
+    modify: []
+    reference: []
+    unresolved_blocks:
+      - lines: [102, 105]
+        reason: variable name constructed from loop index
+    note: >
+      A literal search finds nothing, because the name is built as
+      educat_lev`x'. Returning an empty result would be indistinguishable from
+      "this variable was never touched", which is the invariant this package
+      exists to prevent. The entire foreach block must be reported.
+
+  computed_income:
+    create: []
+    unresolved_blocks:
+      - lines: [116, 117]
+        reason: variable name held in a local macro
+    note: Same class of failure as educat_lev4, without a loop.
+
+  flag_male:
+    create: []
+    unresolved_blocks:
+      - lines: [107, 110]
+        reason: loop over a local macro list
+
+  quintile_1:
+    create: []
+    unresolved_blocks:
+      - lines: [112, 114]
+        reason: forvalues loop index in variable name
+
+  # Option dependent behaviour.
+  _merge:
+    create: [168]
+    reference: [169]
+    drop: [170]
+    verify_against_stata: true
+    note: >
+      Line 167 carries nogen, so it does NOT create _merge. Line 168 does.
+      Distinguishing these requires parsing options, not just the command.
+      Flagging 167 as unresolved is acceptable for v1; silently treating both
+      the same is not.
+
+  wage_daily:
+    create: [51]
+    ancestors: [wage_hourly, wage_monthly, hours_week]
+    note: >
+      Trailing // comment must be stripped without losing the statement. The *
+      on this line is multiplication, not a comment.
+
+  source_note:
+    create: [68]
+    ancestors: []
+    note: >
+      Created from a string literal containing "educat7". source_note has no
+      variable ancestors.
+
+# ---------------------------------------------------------------------------
+# Whole file invariants, independent of any single variable
+
+invariants:
+
+  no_dropped_lines: >
+    Every non blank, non comment line is either attributed to some variable or
+    appears in unresolved_blocks. Assert this as a set operation over the whole
+    file rather than trusting a count. This is the package's central invariant
+    and the fixture is designed so that it fails loudly if broken.
+
+  unresolved_block_count: >
+    At minimum four macro or loop blocks: 102-105, 107-110, 112-114, 116-117.
+    Plus unknown commands at 190 and 191. Plus the unresolved include at 218.
+
+  include_resolution:
+    line_217: >
+      shared/common_labels.do does not exist in the fixture directory. Expected
+      behaviour is an unresolved block with reason "include target not found",
+      not a crash and not silence.
+    line_218: >
+      Same, via do rather than include.
+    note: >
+      If you want to test successful include following, create the target file
+      and add a second expectation. Deliberately left missing here because the
+      failure path is the one that goes wrong quietly.
+
+  termination: >
+    Tracing income_total, final_educ, and educat7 must all terminate. The
+    fixture contains a self reference and a rename chain, the two shapes most
+    likely to loop.
+
+# ---------------------------------------------------------------------------
+# Hazards present in the fixture, as a checklist
+
+hazards_covered:
+  - substring collision across six variables sharing a stem
+  - command abbreviations g, gen, generate, bys, qui, su
+  - replace correctly not abbreviable
+  - star comment at line start versus star as multiplication
+  - trailing // comment
+  - single line block comment
+  - multiline block comment
+  - variable name inside a string literal, three separate cases
+  - /// continuation, single and double
+  - bysort, by, quietly, capture, qui prefixes
+  - foreach over a literal list
+  - foreach over a local macro
+  - forvalues
+  - variable name held in a local macro
+  - rename chain, two hops
+  - self reference
+  - recode with and without generate()
+  - egen with a by() option
+  - destring and encode with generate options
+  - label define and label values
+  - merge with and without nogen
+  - factor variable notation i.varname
+  - unknown user written commands
+  - #delimit ; and #delimit cr
+  - multi statement physical line under #delimit ;
+  - include and do, both unresolvable
+  - drop and keep
