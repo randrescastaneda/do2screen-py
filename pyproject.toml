@@ -31,6 +31,10 @@ dependencies = [
 registry = ["stata-command-registry>=0.1,<1.0"]
 test = ["pytest"]
 dev = ["pytest", "build"]
+docs = [
+    "mkdocs-material>=9.5",
+    "mkdocstrings[python]>=0.25",
+]
 
 [project.scripts]
 do2screen = "do2screen.cli:main"

@@ -52,6 +52,9 @@ htmlcov/
 venv/
 venv*/
 
+# MkDocs build output
+site/
+
 # OS / editors
 .DS_Store
 .idea/
