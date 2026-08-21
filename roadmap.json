@@ -5,7 +5,7 @@
       "id": "initial-scaffolding-and-core-pipeline",
       "title": "Set up project structure, implement core parsing pipeline, and establish differential testing.",
       "objective": "Set up project structure, implement core parsing pipeline, and establish differential testing.",
-      "status": "planned",
+      "status": "done",
       "features": [
         {
           "id": "initial-focus",
@@ -32,6 +32,20 @@
           "title": "Stata output snapshot infrastructure for CI-runnable differential testing",
           "status": "planned",
           "plan": null
+        }
+      ]
+    },
+    {
+      "id": "project-wide-variable-tracing",
+      "title": "Project-wide variable lifecycle tracking",
+      "objective": "Extend do2screen-py to accept multi-file inputs (directory, file list, manifest) and produce a unified lifecycle view across multiple source files.",
+      "status": "planned",
+      "features": [
+        {
+          "id": "project-wide-tracing-impl",
+          "title": "Project-wide variable lifecycle tracking implementation",
+          "status": "planned",
+          "plan": ".cg-docs/plans/2026-08-21-project-wide-tracing-with-source-lines.md"
         }
       ]
     }

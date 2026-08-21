@@ -17,13 +17,16 @@ pip install do2screen-py
 pip install "do2screen-py[test]"       # pytest
 pip install "do2screen-py[dev]"        # build + pytest
 pip install "do2screen-py[docs]"       # mkdocs-material + mkdocstrings
+pip install "do2screen-py[registry]"   # latest upstream registry from GitHub main
 ```
 
 !!! note "About the `[registry]` extra"
-    `pip install "do2screen-py[registry]"` pulls `stata-command-registry`,
-    which is **not yet published to PyPI** under that distribution name. The
-    base install fully parses and reports: commands that cannot be resolved are
-    classified as `unknown_command` unresolved blocks rather than being dropped.
+    The `[registry]` extra installs the latest available commit on `main` from
+    the upstream `stata-command-registry` repository at install time. Refresh an
+    existing environment with `pip install --upgrade --no-cache-dir
+    "do2screen-py[registry]"`. The base install remains usable without the
+    registry; commands that cannot be resolved are classified as `unknown_command`
+    unresolved blocks rather than being dropped.
 
 ## CLI Quickstart
 

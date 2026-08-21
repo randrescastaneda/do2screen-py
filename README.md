@@ -24,14 +24,15 @@ The package installs and runs without `stata-command-registry`. Optional extras:
 ```sh
 pip install "do2screen-py[test]"       # pytest
 pip install "do2screen-py[dev]"        # build + pytest
+pip install "do2screen-py[registry]"   # latest upstream registry from GitHub main
 ```
 
-> **Note on the `[registry]` extra**: `pip install "do2screen-py[registry]"`
-> pulls `stata-command-registry`, which is **not yet published to PyPI** under
-> that distribution name, so that exact command currently fails until the
-> upstream package is released. The base install fully parses and reports:
-> commands that cannot be resolved are classified as `unknown_command`
-> unresolved blocks rather than being dropped.
+> **Note on the `[registry]` extra**: it installs the latest available commit on
+> `main` from the upstream `stata-command-registry` repository at install time.
+> Run `pip install --upgrade --no-cache-dir "do2screen-py[registry]"` to refresh
+> an existing environment. The base install remains usable without the registry;
+> commands that cannot be resolved are classified as `unknown_command` unresolved
+> blocks rather than being dropped.
 
 ## Command line
 
@@ -58,9 +59,10 @@ result.model_dump()
 ```
 
 `trace(path, variable, follow_parents=True, include_labels=False)` returns a
-frozen Pydantic v2 `TraceResult`. The same input and registry version always
-produce byte-identical output; there is no network, randomness, or
-environment-dependent behaviour.
+frozen Pydantic v2 `TraceResult`. The same input and installed registry revision
+always produce byte-identical output; installation or upgrade is the point at
+which the optional GitHub dependency is refreshed. Runtime tracing performs no
+network calls, randomness, or environment-dependent lookups.
 
 ## What the result contains
 
@@ -81,12 +83,14 @@ environment-dependent behaviour.
 
 ## Registry boundary
 
-Command vocabulary comes from `stata-command-registry` (import name
-`stata_registry`). The registry answers *what a word is* (command, prefix,
-variable effect, include driver); this package answers *what the shape of the
-text is*. When the registry is absent, the package still parses and reports
-every statement, classifying commands it cannot resolve as unresolved blocks —
-nothing is silently dropped.
+Command vocabulary comes from the upstream `stata-command-registry` repository
+(installed distribution name `stata-registry`, import name `stata_registry`).
+The optional `[registry]` extra tracks `main` and resolves its latest available
+commit when installed or upgraded. The registry answers *what a word is*
+(command, prefix, variable effect, include driver); this package answers *what
+the shape of the text is*. When the registry is absent, the package still parses
+and reports every statement, classifying commands it cannot resolve as unresolved
+blocks; nothing is silently dropped.
 
 ## Known limitations
 
