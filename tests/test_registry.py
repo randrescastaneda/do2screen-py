@@ -59,23 +59,17 @@ def test_optional_is_include(registry):
     assert registry.is_include("generate") is False
 
 
-def test_absent_registry_fails_cleanly_at_runtime():
-    try:
-        import importlib.util
-
-        present = (
-            importlib.util.find_spec("stata_registry") is not None
-        )
-    except ImportError:  # pragma: no cover
-        present = False
+def test_absent_registry_fails_cleanly_at_runtime(monkeypatch):
+    monkeypatch.setattr(
+        registry_module,
+        "_load_module",
+        lambda: (None, "simulated missing registry"),
+    )
     adapter = RegistryAdapter()
-    if not present:
-        assert adapter.available is False
-        assert "Registry" in adapter.describe_issue()
-        with pytest.raises(RegistryIncompatibilityError):
-            adapter.canonical_command("generate")
-    else:
-        assert adapter.available is True
+    assert adapter.available is False
+    assert "Registry" in adapter.describe_issue()
+    with pytest.raises(RegistryIncompatibilityError):
+        adapter.canonical_command("generate")
 
 
 def test_broken_api_reported_as_incompatible():

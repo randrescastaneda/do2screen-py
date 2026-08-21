@@ -25,10 +25,11 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-# stata-command-registry is not yet published to PyPI under this distribution
-# name. Until it is, it is an optional extra: install and run all unit tests
-# without it; the registry adapter degrades gracefully at runtime.
-registry = ["stata-command-registry>=0.1,<1.0"]
+# Track the upstream repository tip when this optional extra is installed or
+# upgraded. The base package remains usable without the registry dependency.
+registry = [
+    "stata-registry @ git+https://github.com/randrescastaneda/stata-command-registry.git@main",
+]
 test = ["pytest"]
 dev = ["pytest", "build"]
 docs = [

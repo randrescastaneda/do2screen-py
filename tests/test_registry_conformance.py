@@ -1,7 +1,8 @@
 """Conformance test: does the real ``stata_registry`` satisfy the contract?
 
-This test runs only when the upstream ``stata-command-registry`` (import name
-``stata_registry``) is installed (``pip install ".[registry]"``). It verifies
+This test runs only when the upstream ``stata-command-registry`` repository
+(distribution name ``stata-registry``, import name ``stata_registry``) is
+installed (``pip install ".[registry]"``). It verifies
 the actual API surface this adapter relies on. It is skipped with a clear
 reason when the registry is absent.
 """
@@ -18,7 +19,7 @@ REGISTRY_SPEC = importlib.util.find_spec("stata_registry")
 
 requires_registry = pytest.mark.skipif(
     REGISTRY_SPEC is None,
-    reason="stata_registry not installed; install with '.[registry]'",
+    reason="stata_registry not installed; install the latest upstream main with '.[registry]'",
 )
 
 

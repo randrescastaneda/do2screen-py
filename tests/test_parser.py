@@ -192,7 +192,11 @@ def test_unterminated_block_comment(tmp_path):
 
 def test_registry_degraded_mode_marks_unknown(tmp_path, monkeypatch):
     path = write_do(tmp_path, "m.do", "gen x = 1\nreplace x = 2\n")
-    registry = RegistryAdapter()  # real registry absent -> degraded
+    monkeypatch.setattr(
+        "do2screen.registry._load_module",
+        lambda: (None, "simulated missing registry"),
+    )
+    registry = RegistryAdapter()  # explicitly simulated absence -> degraded
     graph = Parser(registry).parse_graph(str(path))
     assert reasons(graph) == ["unknown_command", "unknown_command"]
     assert graph.lifecycle == {}

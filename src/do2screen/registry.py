@@ -14,7 +14,9 @@ documented contract the registry must satisfy:
 The registry is deliberately an optional runtime dependency: constructing the
 adapter never fails, but calling registry-backed methods raises
 :class:`RegistryIncompatibilityError` when the package is absent or the API
-does not match the contract. This package must install and run all of its
+does not match the contract. The ``[registry]`` extra obtains the latest
+upstream repository revision at installation or upgrade time; runtime tracing
+does not access the network. This package must install and run all of its
 registry-independent tests without ``stata_registry`` present.
 """
 
@@ -99,7 +101,8 @@ class RegistryAdapter:
         if self._module is None:
             return (
                 f"Registry unavailable: {self._import_error}. "
-                f"Install `stata-command-registry` (import name "
+                f"Install the upstream `stata-command-registry` repository "
+                f"(distribution `stata-registry`, import name "
                 f"`{self._module_name}`). To act on it, {action}."
             )
         missing = ", ".join(self._missing)
