@@ -16,6 +16,8 @@
 - [x] Unresolved block reporting (7 categories)
 - [x] Coverage metrics
 - [x] Label tracking (opt-in)
+- [x] Project-wide tracing with source lines (ordered files, manifests, and
+  deterministic directory discovery)
 
 ## Planned
 
