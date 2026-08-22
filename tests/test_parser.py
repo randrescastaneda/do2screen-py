@@ -174,6 +174,14 @@ def test_include_cycle(tmp_path):
     assert "unresolved_include" in reasons(graph)
 
 
+def test_unquoted_include_path_with_directory_is_not_truncated(tmp_path):
+    nested = tmp_path / "shared"
+    nested.mkdir()
+    write_do(tmp_path, "shared/common_labels.do", "gen bonus = 1\n")
+    graph, _ = parse(tmp_path, "include shared/common_labels.do\ngen x = bonus\n")
+    assert "bonus" in graph.lifecycle
+
+
 def test_unterminated_brace_block(tmp_path):
     text = "foreach x in 1 2 {\nreplace v`x' = 1\n"
     graph, _ = parse(tmp_path, text)
@@ -228,6 +236,41 @@ def test_unquoted_include_resolves(tmp_path):
     graph, _ = parse(tmp_path, text)
     assert "bonus" in graph.lifecycle
     assert "income" in graph.lifecycle
+
+
+def test_by_prefix_with_one_character_varlist_keeps_command_boundary(tmp_path):
+    graph, _ = parse(tmp_path, "by a: g b = 1\n")
+    assert [item.variable for item in graph.attributions] == ["b"]
+    assert graph.lifecycle["b"][0].start_line == 1
+
+
+def test_include_target_ignores_trailing_comments(tmp_path):
+    write_do(tmp_path, "real.do", "gen real = 1\n")
+    write_do(tmp_path, "wrong.do", "gen wrong = 1\n")
+    graph, _ = parse(
+        tmp_path,
+        'include "real.do" // include "wrong.do"\n'
+        'include "real.do" /* include "wrong.do" */\n',
+    )
+    assert [item.path for item in graph.files].count(str(tmp_path / "real.do")) == 1
+    assert not any(item.path == str(tmp_path / "wrong.do") for item in graph.files)
+
+
+def test_include_target_allows_apostrophe_in_filename(tmp_path):
+    write_do(tmp_path, "worker's.do", "gen result = 1\n")
+    graph, _ = parse(tmp_path, 'include "worker\'s.do"\n')
+    assert "result" in graph.lifecycle
+
+
+def test_same_line_delimiter_directive_keeps_tail_statement(tmp_path):
+    graph, _ = parse(tmp_path, "#delimit cr gen x = 1\n")
+    assert "x" in graph.lifecycle
+
+
+def test_same_line_semicolon_directive_preserves_quoted_include_tail(tmp_path):
+    write_do(tmp_path, "lib.do", "gen result = 1\n")
+    graph, _ = parse(tmp_path, '#delimit ; include "lib.do"; #delimit cr\n')
+    assert "result" in graph.lifecycle
 
 
 def test_creates_ordered_pair(tmp_path):

@@ -39,6 +39,18 @@ def test_unknown_token(registry):
     assert registry.canonical_command("whatever") is None
 
 
+def test_upstream_unknown_token_is_normalized_to_none():
+    class RaisesForUnknown(MockStataRegistry):
+        def canonical_command(self, token):
+            result = super().canonical_command(token)
+            if result is None:
+                raise KeyError(token)
+            return result
+
+    adapter = RegistryAdapter(module=RaisesForUnknown())
+    assert adapter.canonical_command("not_a_real_stata_command") is None
+
+
 def test_prefix_detection(registry):
     assert registry.is_prefix("bysort") is True
     assert registry.is_prefix("generate") is False
@@ -53,7 +65,7 @@ def test_variable_effect_resolves_abbreviations(registry):
     assert registry.variable_effect("rename") == "renames"
 
 
-def test_optional_is_include(registry):
+def test_is_include(registry):
     assert registry.is_include("include") is True
     assert registry.is_include("do") is True
     assert registry.is_include("generate") is False
@@ -80,13 +92,34 @@ def test_broken_api_reported_as_incompatible():
         adapter.variable_effect("generate")
 
 
-def test_missing_is_include_is_graceful():
+def test_missing_is_include_is_incompatible():
     class NoInclude(MockStataRegistry):
         is_include = None  # upstream does not export the optional method
 
     adapter = RegistryAdapter(module=NoInclude())
     assert adapter.available is True
-    assert adapter.is_include("include") is False
+    assert adapter.source_driver_available is False
+    with pytest.raises(RegistryIncompatibilityError):
+        adapter.ensure_source_driver()
+
+
+def test_old_source_driver_registry_is_incompatible():
+    class OldRegistry(MockStataRegistry):
+        __version__ = "0.3.9"
+
+    adapter = RegistryAdapter(module=OldRegistry())
+    with pytest.raises(RegistryIncompatibilityError, match="too old"):
+        adapter.ensure_source_driver()
+
+
+def test_raising_is_include_is_normalized():
+    class RaisingInclude(MockStataRegistry):
+        def is_include(self, command):
+            raise RuntimeError("broken lookup")
+
+    adapter = RegistryAdapter(module=RaisingInclude())
+    with pytest.raises(RegistryIncompatibilityError):
+        adapter.is_include("do")
 
 
 def test_registry_module_is_never_imported_at_import_time():

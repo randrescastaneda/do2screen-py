@@ -38,6 +38,8 @@ _INCLUDES = {"include", "do", "run"}
 class MockStataRegistry:
     """Deterministic stand-in for ``stata_registry``."""
 
+    __version__ = "0.4.0"
+
     def __repr__(self) -> str:
         return "<MockStataRegistry>"
 

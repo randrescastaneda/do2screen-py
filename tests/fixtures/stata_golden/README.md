@@ -11,9 +11,10 @@ regression and differential (snapshot) tests.
 - **Status**: reconstructed offline at implementation time (no Stata binary was
   available in the build environment). The files are written in the style of
   the upstream corpus; they are **not** byte-copies of upstream files.
-  Live exact-line differential verification is tracked as a non-blocking
-  follow-up (`DO2SCREEN_STATA_BIN`; see `../../../.cg-docs/plans/2026-08-17-do2screen-py-parser-pipeline.md`
-  verification row V13).
+Live exact-line differential verification is optional and tracked as V12 in
+`../../../.cg-docs/plans/2026-08-21-project-wide-tracing-with-source-lines.md`.
+It requires `DO2SCREEN_STATA_BIN` and an external do2screen (Stata) reference
+driver; its absence does not block do2screen-py verification.
 
 No survey microdata or confidential content is contained here or anywhere in
 this package.
