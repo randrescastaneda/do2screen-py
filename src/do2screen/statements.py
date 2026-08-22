@@ -158,8 +158,8 @@ def assemble(
     mode = CR
     used_delimit = False
 
-    pending_code: str | None = None  # code-only accumulation
-    pending_raw: list[str] = []  # raw text segments
+    pending_code: str | None = None
+    pending_raw: list[str] = []
     pending_raw_mask: list[str] = []
     pending_lines: list[int] = []
 
@@ -169,15 +169,20 @@ def assemble(
         start: int | None = None
         while line_no >= 1:
             idx = by_line.get(line_no)
-            if idx is None:
-                break
-            if not _is_comment_line(lines[idx]):
+            if idx is None or not _is_comment_line(lines[idx]):
                 break
             if end is None:
                 end = line_no
             start = line_no
             line_no -= 1
         return start, end
+
+    def clear_pending() -> None:
+        nonlocal pending_code, pending_raw, pending_raw_mask, pending_lines
+        pending_code = None
+        pending_raw = []
+        pending_raw_mask = []
+        pending_lines = []
 
     def emit(
         code: str,
@@ -186,13 +191,10 @@ def assemble(
         member_lines: list[int],
         stmt_mode: str,
     ) -> None:
-        # Normalize whitespace: maintain token separation without accumulating
-        # separator spaces across continuation/semicolon boundaries.
         code = " ".join(code.split())
         if not code:
             return
         raw_text = " ".join(raw)
-        # Join raw segments with a neutral (non-code) space boundary.
         raw_mask_text = "N".join(raw_mask) if raw_mask else ""
         start_line = member_lines[0]
         end_line = member_lines[-1]
@@ -211,136 +213,169 @@ def assemble(
             )
         )
 
-    for line in lines:
-        text, mask = line.text, line.code_mask
-        head_text, head_mask, continued = _continuation_info(text, mask)
-        code = _code_only(head_text, head_mask)
+    def append_cr(
+        text: str,
+        mask: str,
+        line_no: int,
+        continued: bool = False,
+    ) -> None:
+        nonlocal pending_code, pending_raw, pending_raw_mask, pending_lines
+        code = _code_only(text, mask)
+        if not code.strip():
+            return
+        if pending_code is None:
+            pending_code = code
+            pending_raw = [text]
+            pending_raw_mask = [mask]
+            pending_lines = [line_no]
+        else:
+            pending_code += " " + code
+            pending_raw.append(text)
+            pending_raw_mask.append(mask)
+            if pending_lines[-1] != line_no:
+                pending_lines.append(line_no)
+        if not continued:
+            emit(pending_code, pending_raw, pending_raw_mask, pending_lines, CR)
+            clear_pending()
 
+    def append_semicolon_segment(
+        text: str,
+        mask: str,
+        line_no: int,
+        terminated: bool,
+    ) -> None:
+        nonlocal pending_code, pending_raw, pending_raw_mask, pending_lines
+        code = _code_only(text, mask)
+        if not code.strip():
+            return
+        if pending_code is None:
+            pending_code = code
+            pending_raw = [text]
+            pending_raw_mask = [mask]
+            pending_lines = [line_no]
+        else:
+            pending_code += " " + code
+            pending_raw.append(text)
+            pending_raw_mask.append(mask)
+            if pending_lines[-1] != line_no:
+                pending_lines.append(line_no)
+        if terminated:
+            emit(pending_code, pending_raw, pending_raw_mask, pending_lines, SEMICOLON)
+            clear_pending()
+
+    def raw_index_after_code(text: str, mask: str, code_count: int) -> int:
+        seen = 0
+        for index, marker in enumerate(mask):
+            if marker == CODE:
+                seen += 1
+                if seen == code_count:
+                    return index + 1
+        return len(text)
+
+    def directive_parts(
+        text: str,
+        mask: str,
+    ) -> tuple[str, str, str, str, str, str] | None:
+        """Return directive and physical prefix/tail when a piece starts with it."""
+        code = _code_only(text, mask)
         stripped = code.lstrip()
-        if stripped.startswith("#delimit"):
-            after = stripped[len("#delimit") :]
-            lead_ws = len(after) - len(after.lstrip())
-            token_area = after[lead_ws:]
-            if token_area.startswith(";"):
-                directive = ";"
-                token_len = 1
-            else:
-                directive = token_area.split(None, 1)[0] if token_area.strip() else ""
-                token_len = len(directive)
-            if directive == ";":
-                mode = SEMICOLON
-                used_delimit = True
-            elif directive in _CR_DIRECTIVES:
-                mode = CR
-            cs, ce = comment_range_before(line.line_no)
-            statements.append(
-                Statement(
-                    code=stripped,
-                    raw=head_text,
-                    raw_mask=head_mask,
-                    start_line=line.line_no,
-                    end_line=line.line_no,
-                    member_lines=[line.line_no],
-                    comment_start_line=cs,
-                    comment_end_line=ce,
-                    delimit=CR,
-                    band="directive",
-                    directive=directive,
-                )
-            )
-            # Resume any remaining code on this line in the new delimiter mode,
-            # so ``#delimit ;gen a = 1;`` does not swallow the trailing
-            # statements (AGENTS.md 3.1: no line silently dropped).
-            remainder = token_area[token_len:]
-            if mode == SEMICOLON and remainder.strip():
-                for k, seg in enumerate(remainder.split(";")):
-                    seg_code = seg.strip()
-                    if k < remainder.count(";"):
-                        if seg_code:
-                            emit(
-                                seg_code,
-                                [seg_code],
-                                ["C" * len(seg_code)],
-                                [line.line_no],
-                                mode,
-                            )
-                    else:
-                        if seg_code:
-                            pending_code = seg_code
-                            pending_raw = [seg_code]
-                            pending_raw_mask = ["C" * len(seg_code)]
-                            pending_lines = [line.line_no]
-            else:
-                pending_code = None
-                pending_raw = []
-                pending_raw_mask = []
-                pending_lines = []
-            continue
+        if not stripped.lower().startswith("#delimit"):
+            return None
+        after = stripped[len("#delimit") :]
+        if after and not after[0].isspace() and not after.startswith(";"):
+            return None
+        leading = len(code) - len(stripped)
+        lead_ws = len(after) - len(after.lstrip())
+        token_area = after[lead_ws:]
+        if token_area.startswith(";"):
+            directive = ";"
+            token_len = 1
+        else:
+            directive = token_area.split(None, 1)[0] if token_area.strip() else ""
+            token_len = len(directive)
+        consumed = leading + len("#delimit") + lead_ws + token_len
+        split = raw_index_after_code(text, mask, consumed)
+        prefix_text = text[:split]
+        prefix_mask = mask[:split]
+        tail_text = text[split:]
+        tail_mask = mask[split:]
+        directive_code = stripped[: len("#delimit") + lead_ws + token_len].strip()
+        return directive, prefix_text, prefix_mask, tail_text, tail_mask, directive_code
 
-        if mode == CR:
-            if pending_code is None:
-                if not code.strip():
-                    continue
-                pending_code = code
-                pending_raw = [head_text]
-                pending_raw_mask = [head_mask]
-                pending_lines = [line.line_no]
+    def add_directive(
+        line_no: int,
+        prefix_text: str,
+        prefix_mask: str,
+        directive: str,
+        directive_code: str,
+    ) -> None:
+        nonlocal mode, used_delimit
+        cs, ce = comment_range_before(line_no)
+        statements.append(
+            Statement(
+                code=directive_code,
+                raw=prefix_text,
+                raw_mask=prefix_mask,
+                start_line=line_no,
+                end_line=line_no,
+                member_lines=[line_no],
+                comment_start_line=cs,
+                comment_end_line=ce,
+                delimit=CR,
+                band="directive",
+                directive=directive,
+            )
+        )
+        if directive == ";":
+            mode = SEMICOLON
+            used_delimit = True
+        elif directive in _CR_DIRECTIVES:
+            mode = CR
+
+    def process_semicolon_piece(text: str, mask: str, line_no: int) -> None:
+        """Process semicolon-separated pieces, preserving raw masks and directives."""
+        segments = _split_semicolon(text, mask)
+        for index, (segment_text, segment_mask) in enumerate(segments):
+            terminated = index < len(segments) - 1
+            parts = directive_parts(segment_text, segment_mask)
+            if parts is not None:
+                directive, prefix_text, prefix_mask, tail_text, tail_mask, directive_code = parts
+                add_directive(line_no, prefix_text, prefix_mask, directive, directive_code)
+                if _code_only(tail_text, tail_mask).strip():
+                    if mode == SEMICOLON:
+                        process_semicolon_piece(tail_text, tail_mask, line_no)
+                    else:
+                        append_cr(tail_text, tail_mask, line_no)
+                continue
+            if mode == SEMICOLON:
+                append_semicolon_segment(segment_text, segment_mask, line_no, terminated)
             else:
-                pending_code += " " + code
-                pending_raw.append(head_text)
-                pending_raw_mask.append(head_mask)
-                if pending_lines[-1] != line.line_no:
-                    pending_lines.append(line.line_no)
-            if not continued:
-                emit(pending_code, pending_raw, pending_raw_mask, pending_lines, mode)
-                pending_code = None
-                pending_raw = []
-                pending_raw_mask = []
-                pending_lines = []
-        else:  # SEMICOLON mode
-            segments = _split_semicolon(head_text, head_mask)
-            for k, (seg_text, seg_mask) in enumerate(segments):
-                seg_code = _code_only(seg_text, seg_mask)
-                is_last = k == len(segments) - 1
-                if not is_last:
-                    if pending_code is None:
-                        if seg_code.strip():
-                            emit(
-                                seg_code,
-                                [seg_text],
-                                [seg_mask],
-                                [line.line_no],
-                                mode,
-                            )
+                append_cr(segment_text, segment_mask, line_no)
+
+    for line in lines:
+        head_text, head_mask, continued = _continuation_info(
+            line.text, line.code_mask
+        )
+        if mode == CR:
+            parts = directive_parts(head_text, head_mask)
+            if parts is not None and pending_code is None:
+                directive, prefix_text, prefix_mask, tail_text, tail_mask, directive_code = parts
+                add_directive(
+                    line.line_no,
+                    prefix_text,
+                    prefix_mask,
+                    directive,
+                    directive_code,
+                )
+                if _code_only(tail_text, tail_mask).strip():
+                    if mode == SEMICOLON:
+                        process_semicolon_piece(tail_text, tail_mask, line.line_no)
                     else:
-                        joined_code = pending_code + " " + seg_code
-                        member_lines = pending_lines
-                        if member_lines[-1] != line.line_no:
-                            member_lines = member_lines + [line.line_no]
-                        emit(
-                            joined_code,
-                            pending_raw + [seg_text],
-                            pending_raw_mask + [seg_mask],
-                            member_lines,
-                            mode,
-                        )
-                        pending_code = None
-                        pending_raw = []
-                        pending_raw_mask = []
-                        pending_lines = []
-                else:
-                    if pending_code is None:
-                        if seg_code.strip():
-                            pending_code = seg_code
-                            pending_raw = [seg_text]
-                            pending_raw_mask = [seg_mask]
-                            pending_lines = [line.line_no]
-                    else:
-                        pending_code += " " + seg_code
-                        pending_raw.append(seg_text)
-                        pending_raw_mask.append(seg_mask)
-                        if pending_lines[-1] != line.line_no:
-                            pending_lines.append(line.line_no)
+                        append_cr(tail_text, tail_mask, line.line_no, continued)
+                continue
+            append_cr(head_text, head_mask, line.line_no, continued)
+        else:
+            process_semicolon_piece(head_text, head_mask, line.line_no)
 
     if pending_code is not None and pending_code.strip():
         emit(pending_code, pending_raw, pending_raw_mask, pending_lines, mode)

@@ -1,31 +1,9 @@
-"""Source parser: statements -> classification -> attribution.
+"""Parse one Stata source into physical ranges and structural events.
 
-Orchestrates scanner -> statements -> grammar for a single file and for the
-resolved include/nested-do graph. Summary of the disposition of every
-executable line:
-
-- A statement whose command resolves in the registry and whose generic shape
-  agrees with the command's ``variable_effect`` produces one or more
-  :class:`~do2screen.models.RangeAttribution` records (lifecycle targets plus
-  ``referenced`` dependency inputs).
-- A statement that cannot be classified is reported as an unresolved block with
-  one of the seven reasons, never silently dropped:
-  ``unknown_command``, ``unsupported_effect``, ``unsupported_syntax``,
-  ``macro_or_loop``, ``unresolved_include``, ``no_variable_attribution``, or
-  ``unterminated_structure``.
-
-Conventions:
-
-- ``#delimit`` directives and resolvable include/``do`` calls have no variable
-  target, so they are recorded as ``no_variable_attribution`` unresolved blocks
-  (the include additionally traverses its target).
-- A missing, macro-built, or unresolvable include target yields
-  ``unresolved_include`` at the caller.
-- A macro reference (backtick/local, ``$`` global, or macro-built token) yields
-  ``macro_or_loop`` covering the nearest enclosing brace block when one
-  exists, else the statement itself.
-- Unterminated ``{`` blocks and unterminated ``/*`` comments yield
-  ``unterminated_structure`` from the opening construct through EOF.
+The parser owns lexical statement boundaries and generic variable grammar. The
+registry supplies command vocabulary and effects. ``parse_graph`` retains the
+legacy depth-first include behavior; project tracing uses ``parse_file`` to
+obtain one immutable physical-source record and replays its events separately.
 """
 
 from __future__ import annotations
@@ -45,17 +23,27 @@ from do2screen.registry import RegistryAdapter, RegistryIncompatibilityError
 from do2screen.scanner import read_source, scan
 from do2screen.statements import Statement, assemble
 
-#: Effects that model no supported variable behaviour in the generic grammar.
+_MAX_INCLUDE_DEPTH = 64
 _UNSUPPORTED_EFFECTS = ("none", "restructures")
 
-#: Defensive cap on include/do nesting depth (avoids unbounded recursion on
-#: pathological files; reported as ``unresolved_include`` when exceeded).
-_MAX_INCLUDE_DEPTH = 64
+
+@dataclass
+class ParsedEvent:
+    """One immutable event in physical source order."""
+
+    range: LineRange
+    attributions: list[RangeAttribution] = field(default_factory=list)
+    unresolved: UnresolvedBlock | None = None
+    include_target: str | None = None
+    kind: str = "records"
+    command: str | None = None
+    effect: str | None = None
+    parent_variables: list[str] = field(default_factory=list)
 
 
 @dataclass
 class ParsedFile:
-    """Full parse of one source file."""
+    """All persisted records and replayable events for one physical source."""
 
     path: str
     provenance: SourceProvenance
@@ -66,11 +54,14 @@ class ParsedFile:
     executable_lines: list[int] = field(default_factory=list)
     attributed_lines: set[int] = field(default_factory=set)
     unresolved_lines: set[int] = field(default_factory=set)
+    source_lines: list[str] = field(default_factory=list)
+    events: list[ParsedEvent] = field(default_factory=list)
+    include_calls: list[tuple[Statement, str]] = field(default_factory=list)
 
 
 @dataclass
 class ParsedGraph:
-    """Merged parse of a root source and its resolved includes."""
+    """Legacy merged graph for a root source and its includes."""
 
     root_path: str
     files: list[ParsedFile] = field(default_factory=list)
@@ -85,49 +76,55 @@ class ParsedGraph:
 
 
 class Parser:
-    """Parses files and their include graphs against a registry adapter."""
+    """Parse sources against a registry adapter."""
 
     def __init__(
         self,
         registry: RegistryAdapter,
         *,
         include_labels: bool = False,
+        require_source_driver: bool = False,
     ) -> None:
         self.registry = registry
         self.include_labels = include_labels
+        self.require_source_driver = require_source_driver
         self._active_paths: set[str] = set()
 
-    # -- public -----------------------------------------------------------
-
     def parse_graph(self, root_path: str | os.PathLike[str]) -> ParsedGraph:
-        """Parse the root file and, depth-first, all resolvable includes."""
+        """Parse a root source and its legacy depth-first include graph."""
         self._active_paths = set()
         root = str(root_path)
         graph = ParsedGraph(root_path=root)
         self._parse_file_into(root, graph, traversal_index=0)
         graph.attributions = _flatten(graph.files, "attributions")
         graph.executable_lines = _flatten(graph.files, "executable_lines")
-        graph.attributed_lines = (
-            set().union(*(f.attributed_lines for f in graph.files))
-            if graph.files
-            else set()
-        )
-        graph.unresolved_lines = (
-            set().union(*(f.unresolved_lines for f in graph.files))
-            if graph.files
-            else set()
-        )
-        for f in graph.files:
-            for var, ranges in f.lifecycle.items():
-                graph.lifecycle.setdefault(var, []).extend(ranges)
-            for var, parents in f.parents.items():
+        graph.attributed_lines = {
+            line
+            for parsed in graph.files
+            for line in parsed.attributed_lines
+        }
+        graph.unresolved_lines = {
+            line
+            for parsed in graph.files
+            for line in parsed.unresolved_lines
+        }
+        for parsed in graph.files:
+            for variable, ranges in parsed.lifecycle.items():
+                graph.lifecycle.setdefault(variable, []).extend(ranges)
+            for variable, parents in parsed.parents.items():
                 for parent in parents:
-                    if parent not in graph.parents.setdefault(var, []):
-                        graph.parents[var].append(parent)
-            graph.unresolved.extend(f.unresolved)
+                    if parent not in graph.parents.setdefault(variable, []):
+                        graph.parents[variable].append(parent)
+            graph.unresolved.extend(parsed.unresolved)
         return graph
 
-    # -- internals --------------------------------------------------------
+    def parse_file(self, path: str | os.PathLike[str]) -> ParsedFile:
+        """Parse one physical source without traversing include targets."""
+        graph = ParsedGraph(root_path=str(path))
+        self._active_paths = set()
+        return self._parse_file_into(
+            str(path), graph, traversal_index=0, recurse_includes=False
+        )
 
     def _parse_file_into(
         self,
@@ -136,120 +133,155 @@ class Parser:
         *,
         traversal_index: int,
         depth: int = 0,
+        recurse_includes: bool = True,
     ) -> ParsedFile:
         text = read_source(path)
-        scan_result = scan(text)
+        scanned = scan(text)
         statements, brace_blocks, _, used_delimit, unterminated_comment = assemble(
-            scan_result
+            scanned
         )
         norm_path = os.path.normpath(path)
         canonical = os.path.realpath(norm_path)
         self._active_paths.add(canonical)
-        line_count = len(text.splitlines())
+        physical_lines = [line.text for line in scanned.lines]
         provenance = SourceProvenance(
             path=norm_path,
-            line_count=line_count,
+            line_count=len(physical_lines),
             used_delimit=used_delimit,
             traversal_index=traversal_index,
         )
         parsed = ParsedFile(
             path=norm_path,
             provenance=provenance,
-            executable_lines=scan_result.executable_line_numbers(),
+            executable_lines=scanned.executable_line_numbers(),
+            source_lines=physical_lines,
         )
         graph.files.append(parsed)
 
-        last_line = max(line_count, 1)
-        covered_blocks: list[tuple[int, int | None]] = []
-        include_targets: list[tuple[Statement, str]] = []
+        last_line = max(len(physical_lines), 1)
+        claims = self._structure_claims(
+            statements,
+            brace_blocks,
+            unterminated_comment,
+            last_line,
+        )
+        if unterminated_comment is not None:
+            graph.block_comment_unterminated = True
+        covered = [(start, end) for start, end, _, _ in claims]
+        for start, end, reason, context in claims:
+            self._record_range_unresolved(
+                parsed,
+                start_line=start,
+                end_line=end,
+                reason=reason,
+                context=context,
+            )
 
-        # Claim macro-bearing brace blocks as one unit BEFORE classifying their
-        # members. This keeps the executable-line partition disjoint: no
-        # statement inside a macro block is ever attributed individually, even
-        # when a non-macro statement precedes the macro one in the same block.
+        include_targets: list[tuple[Statement, str]] = []
+        for statement in statements:
+            if _statement_overlaps(statement, covered):
+                continue
+            if statement.band == "directive":
+                if any(
+                    other is not statement
+                    and other.band == "statement"
+                    and other.start_line == statement.start_line
+                    for other in statements
+                ):
+                    continue
+                self._record_unresolved(
+                    parsed,
+                    statement,
+                    "no_variable_attribution",
+                    {"directive": statement.directive or ""},
+                )
+                continue
+            self._classify_statement(parsed, statement, include_targets)
+
+        parsed.include_calls = list(include_targets)
+        if recurse_includes:
+            self._traverse_includes(
+                parsed,
+                graph,
+                include_targets,
+                depth=depth,
+            )
+        else:
+            self._active_paths.discard(canonical)
+
+        _normalize_terminal_records(parsed)
+        return parsed
+
+    def _structure_claims(
+        self,
+        statements: list[Statement],
+        brace_blocks: list[Any],
+        unterminated_comment: int | None,
+        last_line: int,
+    ) -> list[tuple[int, int, str, dict[str, str]]]:
+        claims: list[tuple[int, int, str, dict[str, str]]] = []
         for block in brace_blocks:
             if block.end_line is None:
                 continue
             members = [
-                s
-                for s in statements
-                if block.start_line <= s.start_line <= block.end_line
+                statement
+                for statement in statements
+                if block.start_line <= statement.start_line <= block.end_line
             ]
-            if any(self._contains_macro(s.code) for s in members):
-                covered_blocks.append((block.start_line, block.end_line))
-                self._record_range_unresolved(
-                    parsed,
-                    start_line=block.start_line,
-                    end_line=block.end_line,
-                    reason="macro_or_loop",
-                    context={
-                        "enclosing_block": f"{block.start_line}-{block.end_line}"
-                    },
+            if any(self._contains_macro(statement.code) for statement in members):
+                claims.append(
+                    (
+                        block.start_line,
+                        block.end_line,
+                        "macro_or_loop",
+                        {"enclosing_block": f"{block.start_line}-{block.end_line}"},
+                    )
                 )
-
-        # Claim unterminated structures (open ``{`` blocks and unterminated
-        # ``/*`` comments) BEFORE classifying members, so the opening line's
-        # already-executable code is never both attributed and unresolved.
         for block in brace_blocks:
             if block.end_line is None:
-                covered_blocks.append((block.start_line, None))
-                self._record_range_unresolved(
-                    parsed,
-                    start_line=block.start_line,
-                    end_line=max(last_line, block.start_line),
-                    reason="unterminated_structure",
-                    context={"structure": "brace_block"},
+                claims.append(
+                    (
+                        block.start_line,
+                        max(block.start_line, last_line),
+                        "unterminated_structure",
+                        {"structure": "brace_block"},
+                    )
                 )
         if unterminated_comment is not None:
-            covered_blocks.append((unterminated_comment, None))
-            parsed.unresolved_lines.update(range(unterminated_comment, last_line + 1))
-            parsed.unresolved.append(
-                UnresolvedBlock(
-                    range=LineRange(
-                        source=norm_path,
-                        start_line=unterminated_comment,
-                        end_line=last_line,
-                    ),
-                    reason="unterminated_structure",
-                    context={"structure": "block_comment"},
+            claims.append(
+                (
+                    unterminated_comment,
+                    last_line,
+                    "unterminated_structure",
+                    {"structure": "block_comment"},
                 )
             )
-            graph.block_comment_unterminated = True
+        return _merge_claims(claims)
 
-        for stmt in statements:
-            if self._is_inside_covered(stmt, covered_blocks):
-                continue
-            if stmt.band == "directive":
+    def _traverse_includes(
+        self,
+        parsed: ParsedFile,
+        graph: ParsedGraph,
+        include_targets: list[tuple[Statement, str]],
+        *,
+        depth: int,
+    ) -> None:
+        base_dir = os.path.dirname(parsed.path)
+        for statement, target in include_targets:
+            if not target or self._contains_include_macro(target):
                 self._record_unresolved(
                     parsed,
-                    stmt,
-                    "no_variable_attribution",
-                    {"directive": stmt.directive or ""},
-                )
-                continue
-            self._classify_statement(parsed, stmt, include_targets)
-
-        # Recurse into resolvable includes depth-first.
-        base_dir = os.path.dirname(norm_path)
-        for stmt, target in include_targets:
-            if not target or self._contains_macro(target):
-                self._record_unresolved(
-                    parsed,
-                    stmt,
+                    statement,
                     "unresolved_include",
                     {"target": target, "reason": "macro_or_missing"},
                 )
                 continue
             child_path = self._resolve_path(target, base_dir)
-            child_canonical = (
-                os.path.realpath(child_path)
-                if os.path.exists(child_path)
-                else child_path
-            )
+            child_canonical = os.path.realpath(child_path)
             if child_canonical in self._active_paths:
                 self._record_unresolved(
                     parsed,
-                    stmt,
+                    statement,
                     "unresolved_include",
                     {"target": target, "reason": "cycle_or_repeat"},
                 )
@@ -257,7 +289,7 @@ class Parser:
             if not os.path.isfile(child_path):
                 self._record_unresolved(
                     parsed,
-                    stmt,
+                    statement,
                     "unresolved_include",
                     {"target": target, "reason": "missing"},
                 )
@@ -265,313 +297,359 @@ class Parser:
             if depth >= _MAX_INCLUDE_DEPTH:
                 self._record_unresolved(
                     parsed,
-                    stmt,
+                    statement,
                     "unresolved_include",
                     {"target": target, "reason": "depth_exceeded"},
                 )
                 continue
             self._record_unresolved(
                 parsed,
-                stmt,
+                statement,
                 "no_variable_attribution",
                 {"include": target, "resolved": "true"},
             )
             self._parse_file_into(
-                child_path, graph, traversal_index=len(graph.files), depth=depth + 1
+                child_path,
+                graph,
+                traversal_index=len(graph.files),
+                depth=depth + 1,
             )
-
-        return parsed
-
-    def _resolve_path(self, target: str, base_dir: str) -> str:
-        if os.path.isabs(target):
-            return target
-        return os.path.join(base_dir, target)
-
-    def _is_inside_covered(
-        self, stmt: Statement, covered_blocks: list[tuple[int, int | None]]
-    ) -> bool:
-        for start, end in covered_blocks:
-            if end is None:
-                if stmt.start_line >= start:
-                    return True
-            elif start <= stmt.start_line <= end:
-                return True
-        return False
-
-    def _contains_macro(self, text: str) -> bool:
-        """True when text carries a macro reference (backtick, ``$``, ``'``)."""
-        return any(ch in text for ch in ("`", "$", "'"))
 
     def _classify_statement(
         self,
         parsed: ParsedFile,
-        stmt: Statement,
+        statement: Statement,
         include_targets: list[tuple[Statement, str]],
     ) -> None:
-        # --- registry degraded or unknown command --------------------
         if not self.registry.available:
             self._record_unresolved(
                 parsed,
-                stmt,
+                statement,
                 "unknown_command",
                 {"registry": "unavailable"},
             )
             return
-
         try:
-            cmd_token, rest = self._split_command(stmt.code)
+            command_token, rest = self._split_command(statement.code)
+            if command_token is None:
+                self._record_unresolved(
+                    parsed,
+                    statement,
+                    "unsupported_syntax",
+                    {"reason": "no_command_token"},
+                )
+                return
+            canonical = self.registry.canonical_command(command_token)
         except RegistryIncompatibilityError as exc:
             self._record_unresolved(
                 parsed,
-                stmt,
+                statement,
                 "unknown_command",
                 {"registry_error": str(exc)[:200]},
             )
             return
-
-        if cmd_token is None:
-            self._record_unresolved(
-                parsed, stmt, "unsupported_syntax", {"reason": "no_command_token"}
-            )
-            return
-
-        canonical = self.registry.canonical_command(cmd_token)
         if canonical is None:
             self._record_unresolved(
-                parsed, stmt, "unknown_command", {"token": cmd_token}
+                parsed,
+                statement,
+                "unknown_command",
+                {"token": command_token},
             )
             return
 
-        # include / nested do -------------------------------------------------
         if self._call_is_include(canonical):
-            include_targets.append((stmt, self._include_path(stmt) or ""))
+            target = self._include_path(statement) or ""
+            include_targets.append((statement, target))
+            parsed.events.append(
+                ParsedEvent(
+                    range=self._line_range(
+                        parsed,
+                        statement.start_line,
+                        statement.end_line,
+                        statement,
+                    ),
+                    include_target=target,
+                    kind="include",
+                )
+            )
             return
 
-        # effect -----------------------------------------------------------------
         try:
             effect = self.registry.variable_effect(canonical)
         except RegistryIncompatibilityError as exc:
             self._record_unresolved(
                 parsed,
-                stmt,
+                statement,
                 "unsupported_effect",
                 {"registry_error": str(exc)[:200]},
             )
             return
 
-        if effect in _UNSUPPORTED_EFFECTS:
+        shape = grammar.analyze(rest)
+        if shape.has_macro or self._contains_macro(statement.code):
             self._record_unresolved(
                 parsed,
-                stmt,
+                statement,
+                "macro_or_loop",
+                {"enclosing_block": "none"},
+            )
+            return
+        if effect in _UNSUPPORTED_EFFECTS and not (
+            effect == "restructures" and shape.kind == "restructure"
+        ):
+            self._record_unresolved(
+                parsed,
+                statement,
                 "unsupported_effect",
                 {"command": canonical, "effect": effect},
             )
             return
 
-        shape = grammar.analyze(rest)
-
-        # A macro reference outside any pre-claimed brace block produces a
-        # statement-scope macro_or_loop. Macro references inside a brace block
-        # were already claimed as one unresolved block covering the whole block
-        # in ``_parse_file_into``, so those lines never reach classification.
-        if shape.has_macro or self._contains_macro(stmt.code):
-            self._record_unresolved(
-                parsed,
-                stmt,
-                "macro_or_loop",
-                {"enclosing_block": "none"},
-            )
-            return
-
-        # effect + shape application -------------------------------------------
-        dispositions = self._apply_effect(canonical, effect, shape)
+        dispositions = self._apply_effect(effect, shape)
         if dispositions is None:
             self._record_unresolved(
                 parsed,
-                stmt,
+                statement,
                 "unsupported_syntax",
                 {"command": canonical, "effect": effect, "shape": shape.kind},
             )
             return
-
         targets, sources = dispositions
         if not targets and not sources:
             self._record_unresolved(
                 parsed,
-                stmt,
+                statement,
                 "no_variable_attribution",
                 {"command": canonical},
             )
             return
+        self._apply_attribution(
+            parsed,
+            statement,
+            targets,
+            sources,
+            command=canonical,
+            effect=effect,
+        )
 
-        self._apply_attribution(parsed, stmt, targets, sources)
+    def _apply_effect(
+        self,
+        effect: str,
+        shape: grammar.Shape,
+    ) -> tuple[list[tuple[str, str]], list[str]] | None:
+        """Map a registry effect and a generic grammar shape to records."""
+        if effect == "creates":
+            if shape.kind == "assignment":
+                return _pairs(shape.targets, "created"), shape.sources
+            if shape.kind == "gen_option":
+                if self._option_has_effect(shape.option_name, "creates"):
+                    return _pairs(shape.targets, "created"), shape.sources
+                return None
+            if shape.kind == "varlist" and len(shape.targets) == 2:
+                return [(shape.targets[1], "created")], [shape.targets[0]]
+            return None
+        if effect == "modifies":
+            if shape.kind == "assignment":
+                return _pairs(shape.targets, "modified"), shape.sources
+            if shape.kind == "mapping":
+                if shape.generated_targets and self._option_has_effect(
+                    shape.option_name, "creates"
+                ):
+                    return _pairs(shape.generated_targets, "created"), shape.targets
+                return _pairs(shape.targets, "modified"), []
+            if shape.kind == "varlist":
+                return _pairs(shape.targets, "modified"), shape.qualifier_sources
+            return None
+        if effect == "renames":
+            if shape.kind == "varlist" and len(shape.targets) == 2:
+                return [(shape.targets[1], "created")], [shape.targets[0]]
+            return None
+        if effect == "removes":
+            if shape.kind == "varlist":
+                return _pairs(shape.targets, "dropped"), shape.qualifier_sources
+            return ([], [])
+        if effect == "labels":
+            if shape.kind == "label" and shape.targets:
+                return [(shape.targets[0], "labelled")], shape.sources
+            if shape.kind == "label":
+                return ([], [])
+            return None
+        if effect == "restructures":
+            if shape.kind == "restructure":
+                return _pairs(shape.targets, "created"), []
+            return None
+        return None
+
+    def _option_has_effect(self, option: str | None, effect: str) -> bool:
+        """Resolve a structural option through the upstream registry."""
+        if option is None:
+            return False
+        try:
+            canonical = self.registry.canonical_command(option)
+            return (
+                canonical is not None
+                and self.registry.variable_effect(canonical) == effect
+            )
+        except RegistryIncompatibilityError:
+            return False
 
     def _apply_attribution(
         self,
         parsed: ParsedFile,
-        stmt: Statement,
+        statement: Statement,
         targets: list[tuple[str, str]],
         sources: list[str],
+        *,
+        command: str,
+        effect: str,
     ) -> None:
-        """Record lifecycle target and dependency-reference attributions."""
-        line_range = LineRange(
-            source=parsed.path,
-            start_line=stmt.start_line,
-            end_line=stmt.end_line,
-            comment_start_line=stmt.comment_start_line,
-            comment_end_line=stmt.comment_end_line,
+        line_range = self._line_range(
+            parsed,
+            statement.start_line,
+            statement.end_line,
+            statement,
         )
-        for var, kind in targets:
-            parsed.attributions.append(
-                RangeAttribution(range=line_range, variable=var, kind=kind)
+        event_attributions: list[RangeAttribution] = []
+        for variable, kind in targets:
+            attribution = RangeAttribution(
+                range=line_range,
+                variable=variable,
+                kind=kind,
             )
-            parsed.attributed_lines.update(range(stmt.start_line, stmt.end_line + 1))
+            parsed.attributions.append(attribution)
+            event_attributions.append(attribution)
+            parsed.attributed_lines.update(
+                range(statement.start_line, statement.end_line + 1)
+            )
             if kind != "labelled" or self.include_labels:
-                parsed.lifecycle.setdefault(var, []).append(line_range)
+                parsed.lifecycle.setdefault(variable, []).append(line_range)
             for source in sources:
-                if source not in parsed.parents.setdefault(var, []):
-                    parsed.parents[var].append(source)
+                if source not in parsed.parents.setdefault(variable, []):
+                    parsed.parents[variable].append(source)
         for source in sources:
-            parsed.attributions.append(
-                RangeAttribution(range=line_range, variable=source, kind="referenced")
+            attribution = RangeAttribution(
+                range=line_range,
+                variable=source,
+                kind="referenced",
             )
-            parsed.attributed_lines.update(range(stmt.start_line, stmt.end_line + 1))
-
-    def _apply_effect(
-        self, command: str, effect: str, shape: grammar.Shape
-    ) -> tuple[list[tuple[str, str]], list[str]] | None:
-        """Map effect + shape to (targets, sources), or None when unsupported.
-
-        ``command`` is unused for behaviour, matching the command-agnostic
-        design; it is kept so callers can record diagnostics.
-        """
-        if effect == "creates":
-            if shape.kind in ("assignment", "gen_option"):
-                return (_pairs(shape.targets, "created"), shape.sources)
-            if shape.kind == "varlist" and len(shape.targets) == 2:
-                # ordered pair: second side is the created target
-                return ([(shape.targets[1], "created")], [shape.targets[0]])
-            return None
-        if effect == "modifies":
-            if shape.kind in ("assignment", "gen_option"):
-                return (_pairs(shape.targets, "modified"), shape.sources)
-            if shape.kind == "varlist":
-                return (_pairs(shape.targets, "modified"), [])
-            return None
-        if effect == "renames":
-            if shape.kind == "varlist" and len(shape.targets) == 2:
-                return ([(shape.targets[1], "created")], [shape.targets[0]])
-            return None
-        if effect == "removes":
-            if shape.kind == "varlist":
-                return (_pairs(shape.targets, "dropped"), [])
-            # e.g. ``drop _all`` -- no extractable variable target.
-            return ([], [])
-        if effect == "labels":
-            # label target: the locally grammatical variable position is the
-            # final variable-like token (subcommand keyword precedes it).
-            if shape.kind == "varlist" and shape.targets:
-                return ([(shape.targets[-1], "labelled")], [])
-            return None
-        return None
-
-    # -- helpers ---------------------------------------------------------
+            parsed.attributions.append(attribution)
+            event_attributions.append(attribution)
+            parsed.attributed_lines.update(
+                range(statement.start_line, statement.end_line + 1)
+            )
+        parsed.events.append(
+            ParsedEvent(
+                range=line_range,
+                attributions=event_attributions,
+                kind="records",
+                command=command,
+                effect=effect,
+                parent_variables=list(sources),
+            )
+        )
 
     def _call_is_include(self, canonical: str) -> bool:
+        if self.require_source_driver:
+            return self.registry.is_include(canonical)
         try:
-            return bool(self.registry.is_include(canonical))
-        except Exception:  # noqa: BLE001 - degrade on any API mismatch
+            return self.registry.is_include(canonical)
+        except RegistryIncompatibilityError:
             return False
 
-    def _include_path(self, stmt: Statement) -> str | None:
-        """Extract an include target path.
-
-        Prefers the first quoted (standard or compound) string literal in the
-        statement's raw text; falls back to the first code token after the
-        command for legal Stata unquoted include targets (``include lib.do``).
-        """
-        text = stmt.raw
-        n = len(text)
-        i = 0
-        while i < n:
-            ch = text[i]
-            if ch == '"':
-                j = i + 1
-                parts: list[str] = []
-                while j < n:
-                    if text[j] == '"':
-                        return "".join(parts)
-                    parts.append(text[j])
-                    j += 1
-                return "".join(parts)
-            if ch == "`" and text[i + 1 : i + 2] == '"':
-                j = i + 2
-                parts = []
-                while j < n:
-                    if text[j : j + 2] == '"\'':
-                        return "".join(parts)
-                    parts.append(text[j])
-                    j += 1
-                return "".join(parts)
-            i += 1
-        # No quoted literal: try an unquoted target in the code-only text.
-        cmd, rest = self._split_command(stmt.code)
-        if cmd is not None and rest.strip():
-            tokens = grammar.tokenize(rest)
-            if tokens:
-                candidate = tokens[0].text
-                if not candidate.startswith("_"):
-                    return candidate
+    def _include_path(self, statement: Statement) -> str | None:
+        """Extract a quoted or unquoted include target from one statement."""
+        text = statement.raw
+        index = 0
+        in_block_comment = False
+        in_line_comment = False
+        while index < len(text):
+            if in_line_comment:
+                break
+            if in_block_comment:
+                if text[index : index + 2] == "*/":
+                    in_block_comment = False
+                    index += 2
+                else:
+                    index += 1
+                continue
+            if text[index : index + 2] == "/*":
+                in_block_comment = True
+                index += 2
+                continue
+            if text[index : index + 2] == "//":
+                in_line_comment = True
+                break
+            if text[index : index + 2] == '`"':
+                close = text.find('"\'', index + 2)
+                if close >= 0:
+                    return text[index + 2 : close]
+                return text[index + 2 :]
+            if text[index] == '"':
+                close = text.find('"', index + 1)
+                if close >= 0:
+                    return text[index + 1 : close]
+                return text[index + 1 :]
+            index += 1
+        _, rest = self._split_command(statement.code)
+        if rest.strip():
+            return rest.strip().split(None, 1)[0].rstrip(",")
         return None
 
     def _split_command(self, code: str) -> tuple[str | None, str]:
-        """Strip prefixes via the registry; return (command_token, rest)."""
+        """Strip registry-defined prefixes and return command plus remainder."""
         tokens = grammar.tokenize(code)
         if not tokens:
             return None, ""
-        idx = 0
-        while idx < len(tokens):
-            t = tokens[idx]
-            if t.text == ":":
-                idx += 1
+        index = 0
+        while index < len(tokens):
+            token = tokens[index].text
+            if token == ":":
+                index += 1
                 continue
-            if self.registry.is_prefix(t.text):
-                idx += 1
-                j = idx
-                while j < len(tokens) and tokens[j].text != ":":
-                    j += 1
-                if j < len(tokens):
-                    idx = j + 1
-                    continue
+            if not self.registry.is_prefix(token):
                 break
-            break
-        if idx >= len(tokens):
+            next_index = index + 1
+            colon_index = next(
+                (
+                    position
+                    for position in range(next_index, len(tokens))
+                    if tokens[position].text == ":"
+                ),
+                None,
+            )
+            index = (
+                colon_index + 1 if colon_index is not None else next_index
+            )
+        if index >= len(tokens):
             return None, ""
-        cmd = tokens[idx].text
-        rest = code[tokens[idx].end :].lstrip()
-        return cmd, rest
+        command = tokens[index].text
+        return command, code[tokens[index].end :].lstrip()
 
     def _record_unresolved(
         self,
         parsed: ParsedFile,
-        stmt: Statement,
+        statement: Statement,
         reason: str,
         context: dict[str, str],
     ) -> None:
-        parsed.unresolved_lines.update(range(stmt.start_line, stmt.end_line + 1))
-        parsed.unresolved.append(
-            UnresolvedBlock(
-                range=LineRange(
-                    source=parsed.path,
-                    start_line=stmt.start_line,
-                    end_line=stmt.end_line,
-                    comment_start_line=stmt.comment_start_line,
-                    comment_end_line=stmt.comment_end_line,
-                ),
-                reason=reason,  # type: ignore[arg-type]
-                context=context,
-                statement=stmt.code,
-            )
+        line_range = self._line_range(
+            parsed,
+            statement.start_line,
+            statement.end_line,
+            statement,
+        )
+        block = UnresolvedBlock(
+            range=line_range,
+            reason=reason,  # type: ignore[arg-type]
+            context=context,
+            statement=statement.code,
+        )
+        parsed.unresolved.append(block)
+        parsed.unresolved_lines.update(
+            range(statement.start_line, statement.end_line + 1)
+        )
+        parsed.events.append(
+            ParsedEvent(range=line_range, unresolved=block, kind="unresolved")
         )
 
     def _record_range_unresolved(
@@ -584,27 +662,208 @@ class Parser:
         context: dict[str, str],
         statement: str | None = None,
     ) -> None:
-        parsed.unresolved_lines.update(range(start_line, end_line + 1))
-        parsed.unresolved.append(
-            UnresolvedBlock(
-                range=LineRange(
-                    source=parsed.path,
-                    start_line=start_line,
-                    end_line=end_line,
-                ),
-                reason=reason,  # type: ignore[arg-type]
-                context=context,
-                statement=statement,
-            )
+        line_range = self._line_range(parsed, start_line, end_line)
+        block = UnresolvedBlock(
+            range=line_range,
+            reason=reason,  # type: ignore[arg-type]
+            context=context,
+            statement=statement,
         )
+        parsed.unresolved.append(block)
+        parsed.unresolved_lines.update(range(start_line, end_line + 1))
+        parsed.events.append(
+            ParsedEvent(range=line_range, unresolved=block, kind="unresolved")
+        )
+
+    def _line_range(
+        self,
+        parsed: ParsedFile,
+        start_line: int,
+        end_line: int,
+        statement: Statement | None = None,
+    ) -> LineRange:
+        return LineRange(
+            source=parsed.path,
+            start_line=start_line,
+            end_line=end_line,
+            comment_start_line=(statement.comment_start_line if statement else None),
+            comment_end_line=(statement.comment_end_line if statement else None),
+            source_lines=_source_slice(parsed.source_lines, start_line, end_line),
+        )
+
+    @staticmethod
+    def _contains_macro(text: str) -> bool:
+        return any(character in text for character in ("`", "$", "'"))
+
+    @staticmethod
+    def _contains_include_macro(text: str) -> bool:
+        return "`" in text or "$" in text
+
+    @staticmethod
+    def _resolve_path(target: str, base_dir: str) -> str:
+        return target if os.path.isabs(target) else os.path.join(base_dir, target)
 
 
 def _pairs(items: list[str], kind: str) -> list[tuple[str, str]]:
     return [(item, kind) for item in items]
 
 
-def _flatten(files: list[ParsedFile], attr: str) -> list[Any]:
-    out: list[Any] = []
-    for f in files:
-        out.extend(getattr(f, attr))
-    return out
+def _looks_like_match_spec(tokens: list[Any], colon_index: int) -> bool:
+    """Return whether a colon belongs to a numeric/identifier match token."""
+    if colon_index == 0 or colon_index + 1 >= len(tokens):
+        return False
+    left = tokens[colon_index - 1].text
+    right = tokens[colon_index + 1].text
+    left_is_match_part = grammar.is_numeric(left) or (
+        len(left) == 1 and left.isalpha()
+    )
+    right_is_match_part = grammar.is_numeric(right) or (
+        len(right) == 1 and right.isalpha()
+    )
+    return left_is_match_part and right_is_match_part
+
+
+def _statement_overlaps(
+    statement: Statement,
+    intervals: list[tuple[int, int]],
+) -> bool:
+    return any(
+        statement.start_line <= end and statement.end_line >= start
+        for start, end in intervals
+    )
+
+
+def _merge_claims(
+    claims: list[tuple[int, int, str, dict[str, str]]]
+) -> list[tuple[int, int, str, dict[str, str]]]:
+    merged: list[tuple[int, int, str, dict[str, str]]] = []
+    for claim in sorted(claims, key=lambda value: (value[0], value[1])):
+        if not merged or claim[0] > merged[-1][1]:
+            merged.append(claim)
+            continue
+        start, end, reason, context = merged[-1]
+        merged[-1] = (start, max(end, claim[1]), reason, context)
+    return merged
+
+
+def _source_slice(source_lines: list[str], start_line: int, end_line: int) -> list[str]:
+    if start_line < 1 or end_line < start_line:
+        return []
+    return list(source_lines[start_line - 1 : end_line])
+
+
+def _range_slice(line_range: LineRange, start_line: int, end_line: int) -> LineRange:
+    offset = start_line - line_range.start_line
+    return LineRange(
+        source=line_range.source,
+        start_line=start_line,
+        end_line=end_line,
+        comment_start_line=(
+            line_range.comment_start_line
+            if start_line == line_range.start_line
+            else None
+        ),
+        comment_end_line=(
+            line_range.comment_end_line
+            if start_line == line_range.start_line
+            else None
+        ),
+        source_lines=line_range.source_lines[
+            offset : offset + end_line - start_line + 1
+        ],
+    )
+
+
+def _intervals(
+    start_line: int,
+    end_line: int,
+    blocked: set[int],
+) -> list[tuple[int, int]]:
+    result: list[tuple[int, int]] = []
+    start: int | None = None
+    for line in range(start_line, end_line + 1):
+        if line in blocked:
+            if start is not None:
+                result.append((start, line - 1))
+                start = None
+        elif start is None:
+            start = line
+    if start is not None:
+        result.append((start, end_line))
+    return result
+
+
+def _normalize_terminal_records(parsed: ParsedFile) -> None:
+    """Make persisted unresolved records disjoint from attributions.
+
+    Physical ranges have no column coordinates. If two semicolon-separated
+    statements share a line, an attribution owns that physical line and any
+    unresolved statement on the same line is retained only for its remaining
+    physical lines. The result is derived from persisted records, not parser
+    bookkeeping.
+    """
+    attributed: set[int] = set()
+    for attribution in parsed.attributions:
+        if attribution.range.source != parsed.path:
+            continue
+        attributed.update(
+            range(attribution.range.start_line, attribution.range.end_line + 1)
+        )
+    claimed = set(attributed)
+    normalized: list[UnresolvedBlock] = []
+    replacements: dict[int, list[UnresolvedBlock]] = {}
+    for block in parsed.unresolved:
+        if block.range.source != parsed.path:
+            normalized.append(block)
+            replacements[id(block)] = [block]
+            continue
+        pieces: list[UnresolvedBlock] = []
+        for start, end in _intervals(
+            block.range.start_line,
+            block.range.end_line,
+            claimed,
+        ):
+            piece = UnresolvedBlock(
+                range=_range_slice(block.range, start, end),
+                reason=block.reason,
+                context=dict(block.context),
+                statement=block.statement,
+            )
+            pieces.append(piece)
+            normalized.append(piece)
+            claimed.update(range(start, end + 1))
+        replacements[id(block)] = pieces
+    parsed.unresolved = normalized
+    parsed.attributed_lines = attributed
+    parsed.unresolved_lines = {
+        line
+        for block in normalized
+        for line in range(block.range.start_line, block.range.end_line + 1)
+    }
+    normalized_events: list[ParsedEvent] = []
+    for event in parsed.events:
+        if event.unresolved is None:
+            normalized_events.append(event)
+            continue
+        pieces = replacements.get(id(event.unresolved), [])
+        normalized_events.extend(
+            ParsedEvent(
+                range=piece.range,
+                unresolved=piece,
+                kind=event.kind,
+                command=event.command,
+                effect=event.effect,
+                include_target=event.include_target,
+                attributions=list(event.attributions),
+                parent_variables=list(event.parent_variables),
+            )
+            for piece in pieces
+        )
+    parsed.events = normalized_events
+
+
+def _flatten(files: list[ParsedFile], attribute: str) -> list[Any]:
+    result: list[Any] = []
+    for parsed in files:
+        result.extend(getattr(parsed, attribute))
+    return result
