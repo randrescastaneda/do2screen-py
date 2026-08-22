@@ -20,6 +20,10 @@ from pydantic import BaseModel, ConfigDict, Field
 #: Lifecycle effect of an attributed range.
 Kind = Literal["created", "modified", "dropped", "labelled", "referenced"]
 
+# Public project input modes. Legacy single-file traces use ``None`` for the
+# additive ``TraceResult.input_mode`` field.
+ProjectInputMode = Literal["files", "directory", "manifest"]
+
 #: Why a block of code could not be attributed to a variable.
 UnresolvedReason = Literal[
     "macro_or_loop",
@@ -61,6 +65,9 @@ class LineRange(BaseModel):
         comment_start_line: Optional first line of the contiguous full-line
             comment immediately preceding the statement.
         comment_end_line: Optional last line of that preceding comment.
+        source_lines: Decoded physical source lines covered by this inclusive
+            range, without line terminators. The list length is
+            ``end_line - start_line + 1``.
     """
 
     model_config = ConfigDict(frozen=True)
@@ -70,6 +77,7 @@ class LineRange(BaseModel):
     end_line: int
     comment_start_line: int | None = None
     comment_end_line: int | None = None
+    source_lines: list[str] = Field(default_factory=list)
 
 
 class RangeAttribution(BaseModel):
@@ -128,6 +136,49 @@ class UnresolvedBlock(BaseModel):
     statement: str | None = None
 
 
+class VariableContext(BaseModel):
+    """One occurrence-qualified definition context for a variable."""
+
+    model_config = ConfigDict(frozen=True)
+
+    source: str
+    first_creation_line: int | None = None
+    lifecycle_ranges: list[LineRange] = Field(default_factory=list)
+    direct_parents: list[str] = Field(default_factory=list)
+    occurrence_sequence: int | None = None
+    caller_sequence: int | None = None
+    caller_source: str | None = None
+    caller_range: LineRange | None = None
+
+
+class VariableIdentity(BaseModel):
+    """A variable name and its occurrence-qualified definition contexts."""
+
+    model_config = ConfigDict(frozen=True)
+
+    variable: str
+    contexts: list[VariableContext] = Field(default_factory=list)
+
+
+class ProjectDiagnostic(BaseModel):
+    """Non-terminal uncertainty or input fact from a project trace.
+
+    Diagnostics are separate from ``unresolved_blocks``: a diagnostic may have
+    no physical range and never changes the parser's terminal line partition.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    code: str
+    message: str | None = None
+    source: str | None = None
+    manifest_path: str | None = None
+    variable: str | None = None
+    candidate_sources: list[str] = Field(default_factory=list)
+    context: dict[str, str] = Field(default_factory=dict)
+    range: LineRange | None = None
+
+
 class TraceResult(BaseModel):
     """The full result of tracing one variable through one source graph.
 
@@ -142,6 +193,11 @@ class TraceResult(BaseModel):
             attributed range. Sentinel 1.0 when there are no executable lines.
         sources: Provenance of every traversed source, in traversal order.
         source: Provenance of the root/target source.
+        input_mode: Project input mode, or ``None`` for a legacy trace.
+        project_files: Canonical physical sources accepted by a project input.
+        variable_identities: Occurrence-qualified project definition contexts.
+        manifest_path: Canonical manifest path for manifest input, if any.
+        project_diagnostics: Non-terminal project uncertainty and input facts.
     """
 
     model_config = ConfigDict(frozen=True)
@@ -154,3 +210,8 @@ class TraceResult(BaseModel):
     coverage: float
     sources: list[SourceProvenance] = Field(default_factory=list)
     source: SourceProvenance
+    input_mode: ProjectInputMode | None = None
+    project_files: list[str] = Field(default_factory=list)
+    variable_identities: list[VariableIdentity] = Field(default_factory=list)
+    manifest_path: str | None = None
+    project_diagnostics: list[ProjectDiagnostic] = Field(default_factory=list)
