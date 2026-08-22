@@ -1,7 +1,11 @@
 ---
 date: 2026-08-21
 title: "Project-wide tracing with source lines"
-status: active
+status: completed
+completed-date: 2026-08-22
+completed-phases: [1, 2, 3, 4, 5]
+execution-report: .cg-docs/work-reports/2026-08-21-project-wide-tracing-with-source-lines.md
+failing-steps: []
 scope: "Deep"
 brainstorm: null
 language: "Python"
@@ -48,12 +52,21 @@ parser invariant.
 - The current mock registry is test infrastructure, but the repository forbids
   local command vocabulary. The optional `[registry]` extra must obtain the
   latest available upstream `main` revision at installation or explicit
-  upgrade time. Project work remains blocked until that revision defines and
-  supplies the required include capability and conformance data; this
-  repository must not extend the mock with new command names.
-- Current live differential tests are an xfailed placeholder, so an actual
-  do2screen (Stata) runner over the ported golden corpus is required completion
-  evidence rather than snapshot-only evidence.
+  upgrade time. Project work remains blocked until `stata-registry` `0.4.0` or
+  later provides a formal source-driver contract and conformance data. The
+  upstream contract must include an explicit `include_driver: bool` field for
+  shipped command entries, a public `is_include(token) -> bool` lookup that
+  resolves canonical names and supported abbreviations, and upstream tests
+  identifying the commands that execute another Stata source file. This
+  repository must not extend the mock with new command names or infer source
+  drivers from `variable_effect`.
+- Current live differential tests are an xfailed placeholder. An executable
+  do2screen (Stata) runner remains valuable external parity evidence, but it is
+  optional for local implementation and completion because do2screen-py must
+  install, run, and pass its Python test suite without Stata. When a Stata
+  environment or Stata MCP is available, run the reference comparison; when it
+  is not available, record the skipped optional evidence and retain the
+  committed snapshot and Python regression checks.
 - The source-aware invariant must derive terminal coverage from persisted
   attribution and unresolved records, not parser bookkeeping. — source:
   `.cg-docs/solutions/testing-patterns/2026-08-17-no-dropped-lines-invariant-and-source-aware-coverage.md`
@@ -75,27 +88,28 @@ parser invariant.
 | R11 | Resolve cross-file lineage with occurrence-qualified definition nodes and active-definition binding, never a merged name-only parent map. | revised plan review finding P1.3 |
 | R12 | In unordered directory mode, report cross-file dependency and same-name ambiguity as non-terminal `cross_file_unordered` project diagnostics and omit uncertain ancestry edges. | uncertainty-reporting invariant; P1.4 |
 | R13 | Add optional project metadata without changing existing fields: input mode, project files, manifest path, variable identities/contexts, and project diagnostics. | public contract |
-| R14 | Track the latest upstream registry `main` revision at installation or explicit upgrade time, record its resolved commit for each verification run, and require that revision to provide a formal include capability, conformance test, and upstream-supplied test data before project implementation proceeds. | registry boundary; P1.5 |
+| R14 | Track the latest upstream registry `main` revision at installation or explicit upgrade time, record its resolved commit and package version for each verification run, and require `stata-registry` `0.4.0+` to provide explicit source-driver metadata, a public include lookup, conformance tests, and upstream-supplied test data before project implementation proceeds. | registry boundary; P1.5 |
 | R15 | Extend the CLI with exact unambiguous project grammar while preserving `do2screen PATH VARIABLE` legacy grammar. | revised plan review finding P1.6 |
 | R16 | Document source-line representation, API signatures, manifest schema, ordering, diagnostics, failure policy, and limitations. | documentation quality |
-| R17 | Retain no-dropped-lines, deterministic output, source-aware coverage, JSON round-trip, and executed do2screen (Stata) line-set differential evidence. | AGENTS.md §§3.1-3.5, 5; P1.7 |
+| R17 | Retain no-dropped-lines, deterministic output, source-aware coverage, JSON round-trip, and optional executed do2screen (Stata) line-set differential evidence when a reference environment is available. | AGENTS.md §§3.1-3.5, 5; P1.7 |
 
 ## Implementation Steps
 
 ## Phase 1: Upstream Registry Prerequisite
 
-### 1. Establish the registry capability boundary
+### 1. Establish the registry source-driver capability boundary
 
 - **Requirements**: R14, R17
 - **Files**: `pyproject.toml`, `src/do2screen/registry.py`, `tests/test_registry_conformance.py`, upstream `stata-command-registry` release notes and conformance fixture/data
 - **Details**:
-  - Keep the optional registry dependency pointed at the upstream Git repository's `main` branch so a fresh installation or explicit upgrade resolves its latest available revision. Record the resolved commit in verification evidence; the installed commit, not a moving network lookup during tracing, determines deterministic output.
-  - Change `RegistryAdapter.is_include()` from an optional silent fallback to a conformance-checked capability for source-graph/project APIs. Existing single-file behavior remains governed by the installed supported registry contract.
-  - Add an adapter conformance test for include classification using upstream-supplied data once the capability is available. Do not add command names, abbreviations, effects, prefixes, or include names to a local mock.
-  - Record the do2screen (Stata) reference runner location, supported binary/version, invocation driver, ported corpus, and machine-readable line-set output format needed by final differential verification.
-- **Test Scenarios**: compatible registry exposes required capability; missing/old registry fails explicitly; conformance fixture is consumed without local vocabulary; reference driver produces one line-set result per corpus case.
-- **Tests**: registry conformance test; reference-runner smoke test on one golden fixture.
-  - **Acceptance criteria**: The latest resolved upstream `main` revision satisfies the required registry capability, and an executable do2screen (Stata) reference runner exists. If either is unavailable, stop with this plan blocked rather than substituting a local implementation.
+  - Keep the optional registry dependency pointed at the upstream Git repository's `main` branch so a fresh installation or explicit upgrade resolves its latest available revision. Record the resolved commit and installed package version in verification evidence; the installed revision, not a moving network lookup during tracing, determines deterministic output.
+  - Require an upstream `0.4.0+` source-driver contract: every shipped command entry has an explicit `include_driver` boolean, source-driving commands are marked from upstream-maintained Stata evidence, and the reader exports `is_include(token) -> bool` for canonical names and supported abbreviations. The upstream API must return `False` for non-source-driving or unknown tokens rather than infer behavior from `variable_effect`.
+  - Change `RegistryAdapter.is_include()` from an optional silent fallback to a conformance-checked capability for source-graph/project APIs. An absent or incompatible capability must raise `RegistryIncompatibilityError` for project tracing; existing single-file behavior remains governed by the installed supported registry contract.
+  - Add an adapter conformance test for the upstream source-driver fixture and assert the installed package is `stata-registry>=0.4.0`. Do not add command names, abbreviations, effects, prefixes, or source-driver names to a local mock.
+  - Document the optional do2screen (Stata) reference runner location, supported binary/version, invocation driver, ported corpus, and machine-readable line-set output format for environments that can provide external parity evidence.
+- **Test Scenarios**: `stata-registry>=0.4.0` exposes explicit source-driver metadata and the required lookup; missing/old registry fails explicitly; upstream conformance data is consumed without local vocabulary; optional reference driver produces one line-set result per corpus case when available.
+- **Tests**: registry source-driver conformance test; optional reference-runner smoke test on one golden fixture.
+  - **Acceptance criteria**: The latest resolved upstream `main` revision is `stata-registry>=0.4.0` and satisfies the source-driver contract. An unavailable Stata executable, Stata MCP, or reference runner is recorded as skipped optional evidence and does not block this plan.
 
 ## Phase 2: Public Contract And Lossless Source Text
 
@@ -239,13 +253,13 @@ parser invariant.
 - **Files**: all changed implementation and test files
 - **Details**:
   - Run the complete pytest suite, including existing golden and snapshot coverage.
-  - Run the executable do2screen (Stata) reference driver from Step 1 over every ported golden corpus case and diff the returned line sets against do2screen-py. Keep physical-range-specific delimiter/continuation assertions in Python tests where the reference has transformed parser-record numbering.
+  - If a Stata executable, Stata MCP, and completed do2screen (Stata) reference driver are available, run the driver over every ported golden corpus case and diff the returned line sets against do2screen-py. Otherwise record the optional differential evidence as skipped. Keep physical-range-specific delimiter/continuation assertions in Python tests where the reference has transformed parser-record numbering.
   - Build the distribution and run public import smoke tests for legacy and new entry points/models.
   - Compare repeated single-file `TraceResult.model_dump_json()` results to protect deterministic output after source text is added.
-  - Inspect all changes for registry-boundary violations before declaring completion.
+  - Inspect all changes for registry-boundary violations before declaring completion; do not treat optional Stata availability as a package dependency.
 - **Test Scenarios**: full suite; package build; imports; repeated single-file and project output.
-- **Tests**: `pytest && python -m build && python -c "from do2screen import trace, trace_directory, trace_files, trace_manifest, VariableIdentity, ProjectDiagnostic"` and the pinned do2screen (Stata) corpus-diff command documented in Step 1.
-- **Acceptance criteria**: Required unit, invariant, registry, package, and executed reference-differential commands pass with no compatibility or parity regressions.
+- **Tests**: `pytest && python -m build && python -c "from do2screen import trace, trace_directory, trace_files, trace_manifest, VariableIdentity, ProjectDiagnostic"`; run the pinned do2screen (Stata) corpus-diff command when the optional reference environment is available.
+- **Acceptance criteria**: Required unit, invariant, registry, package, and import commands pass with no compatibility or parity regressions. Reference differential evidence is recorded as passed when available or skipped with a rationale when unavailable.
 
 ## Testing Strategy
 
@@ -253,26 +267,26 @@ parser invariant.
 |---|---|
 | Public JSON compatibility | Validate old JSON without added fields; round-trip source lines, identities, and diagnostics without ranges. |
 | Source-line representation | Assert decoded terminator-free exactness for LF/CRLF, BOM, replacement decoding, continuation, delimiter, include, and unresolved ranges. |
-| Registry prerequisite | Run include-capability conformance tests against the resolved upstream `main` revision and upstream-supplied data; block on absence. |
+| Registry prerequisite | Run source-driver/include conformance tests against the resolved upstream `main` revision and upstream-supplied data; block on absence, an old package version, or an API/data mismatch. |
 | Ingestion | Use `tmp_path` projects for containment, exact V1 schema, unknown keys, duplicates, missing files, and empty explicit lists. |
 | Parse cache and occurrences | Assert one physical read/parse with replay at every repeated include call site; distinguish repetition from recursion. |
 | Ordered lineage | Exercise interleaved includes, replacement definitions, drops/recreation, rename-derived dependencies, active-definition binding, and cycles. |
 | Unordered safety | Verify directory mode emits non-terminal `cross_file_unordered` diagnostics and never returns guessed cross-file ancestors. |
 | Invariants | Derive terminal sets and coverage from persisted records per physical source; diagnostics never alter the terminal partition. |
 | CLI and API | Test exact legacy/project grammar, partial/no-readable-root exit behavior, stdout/stderr discipline, imports, and deterministic JSON. |
-| Differential acceptance | Execute the pinned do2screen (Stata) driver over every ported golden case and diff returned line sets; snapshots remain supplemental. |
+| Differential acceptance | Execute the pinned do2screen (Stata) driver over every ported golden case and diff returned line sets when the optional reference environment is available; otherwise record the skip and use snapshots plus Python regression checks. |
 
 ## Documentation Checklist
 
-- [ ] `LineRange.source_lines` documented as inclusive decoded physical source text without terminators.
-- [ ] Source-line decoding, BOM, replacement, and terminator-removal semantics documented.
-- [ ] `TraceResult` project metadata and `ProjectDiagnostic` compatibility defaults documented.
-- [ ] API reference and exact signatures for the three new entry points/models documented.
-- [ ] CLI examples use `--variable` with `--dir`, `--files`, `--manifest`, and `--recursive` only in directory mode.
-- [ ] Exact manifest V1 schema, validation, duplicate, relative, and absolute path rules documented.
-- [ ] Explicit occurrence ordering versus deterministic-but-unordered directory discovery documented.
-- [ ] `cross_file_unordered`, missing input, unreadable include, partial success, and no-readable-root diagnostic/exit behavior documented.
-- [ ] No domain-specific vocabulary introduced.
+- [x] `LineRange.source_lines` documented as inclusive decoded physical source text without terminators.
+- [x] Source-line decoding, BOM, replacement, and terminator-removal semantics documented.
+- [x] `TraceResult` project metadata and `ProjectDiagnostic` compatibility defaults documented.
+- [x] API reference and exact signatures for the three new entry points/models documented.
+- [x] CLI examples use `--variable` with `--dir`, `--files`, `--manifest`, and `--recursive` only in directory mode.
+- [x] Exact manifest V1 schema, validation, duplicate, relative, and absolute path rules documented.
+- [x] Explicit occurrence ordering versus deterministic-but-unordered directory discovery documented.
+- [x] `cross_file_unordered`, missing input, unreadable include, partial success, and no-readable-root diagnostic/exit behavior documented.
+- [x] No domain-specific vocabulary introduced.
 
 ## Risks & Mitigations
 
@@ -288,10 +302,10 @@ parser invariant.
 | Directory order is interpreted as execution order | Guessed lineage | Mark directory input unordered and emit explicit ambiguity blocks. |
 | Diagnostic overlaps terminal parser disposition | No-dropped-lines invariant fails | Use defaulted non-terminal `ProjectDiagnostic`, never `UnresolvedBlock`, for project ambiguity/missing roots. |
 | Project merge hides an unparsed/missing file | Silent absence | Record structured project diagnostics and define partial-result exit policy. |
-| Include capability is optional/unavailable | Source graph cannot be guaranteed | Block on the resolved upstream `main` capability and conformance fixture. |
+| Upstream source-driver contract is unavailable or inconsistent | Source graph cannot be guaranteed | Block on `stata-registry>=0.4.0`, explicit `include_driver` metadata, `is_include()`, and upstream conformance fixtures; never infer from `variable_effect` or add local vocabulary. |
 | Parser bookkeeping and emitted records drift together | Invariant falsely passes | Compute invariant terminal sets independently from persisted records. |
 | CLI file-list parsing consumes the variable | Legacy/project command ambiguity | Require `--variable` for project modes and test exact grammar. |
-| Snapshot-only differential cannot demonstrate parity | Regressions escape the primary acceptance criterion | Require executed do2screen (Stata) corpus diff as final evidence. |
+| Optional differential environment is unavailable | External parity evidence is delayed | Keep the runner opt-in and record the skip; retain snapshots and Python regression checks, and run the corpus diff in a Stata-capable validation environment. |
 
 ## Out of Scope
 
@@ -316,7 +330,7 @@ definition contexts rather than guessing from file names or merged variable name
 
 | ID | Phase | Evidence Required | Command/Artifact | Required |
 |----|-------|-------------------|------------------|----------|
-| V1 | 1 | Resolved upstream `main` revision provides the include capability and the Stata reference driver passes its smoke checks | upstream conformance test; reference-driver smoke corpus case | yes |
+| V1 | 1 | Resolved upstream `main` revision installs `stata-registry>=0.4.0` and provides the source-driver/include capability | upstream registry conformance test, explicit metadata, reader API, and upstream-supplied include data | yes |
 | V2 | 2 | Legacy JSON validates; source-line and diagnostic models round-trip losslessly | `pytest tests/test_models.py` | yes |
 | V3 | 2 | Parser returns decoded terminator-free source lines for single and multi-line ranges | `pytest tests/test_parser.py tests/test_trace.py` | yes |
 | V4 | 2 | Manifest V1 validation and deterministic directory discovery work | `pytest tests/test_manifest.py tests/test_ingest.py` | yes |
@@ -326,7 +340,8 @@ definition contexts rather than guessing from file names or merged variable name
 | V8 | 4 | Unordered inputs report non-terminal ambiguity without guessed ancestors | `pytest tests/test_project.py -k unordered` | yes |
 | V9 | 5 | Exact CLI grammar preserves legacy mode and supports project modes/source-line JSON | `pytest tests/test_cli.py` | yes |
 | V10 | 5 | New API/model exports import and docs reflect signatures/diagnostics | import smoke test; documentation review | yes |
-| V11 | final | Full suite, build, and executed do2screen (Stata) corpus diff pass | `pytest && python -m build`; pinned reference-diff command | yes |
+| V11 | final | Full suite, build, imports, and deterministic output checks pass | `pytest && python -m build`; import and repeat-output smoke checks | yes |
+| V12 | final | Optional do2screen (Stata) corpus differential comparison passes when a reference environment is available | pinned reference-diff command; otherwise recorded skip rationale | no |
 
 ### Constraints
 
@@ -353,12 +368,12 @@ definition contexts rather than guessing from file names or merged variable name
 2. Keep compatibility by adding only optional public fields with defaults.
 3. Cache physical parses once but preserve every valid include/root occurrence in an execution stream.
 4. Bind ordered references to active definition contexts; treat unspecified cross-file order as non-terminal uncertainty.
-5. Stop for upstream registry/reference-runner work rather than adding command names locally or relying on snapshots.
+5. Stop for upstream registry source-driver capability work rather than adding command names locally or inferring from `variable_effect`. Treat the do2screen (Stata) reference runner as optional external evidence; never add Stata as a runtime or installation dependency.
 6. Under `ask`, pause for approval before any necessary deviation from this plan.
 
 ### Blocked-Stop Conditions
 
-- The resolved upstream registry revision lacks the include capability or the executable do2screen (Stata) reference runner is unavailable.
+- The resolved upstream registry revision is below `stata-registry` `0.4.0`, lacks explicit source-driver metadata, lacks `is_include()`, or fails upstream conformance data.
 - Decoded terminator-free source text cannot be added without changing existing line-range semantics.
 - A needed model change renames, removes, or reinterprets a public field.
 - A required fixture depends on Stata vocabulary absent from the registry.

@@ -1,6 +1,18 @@
 # 🧠 Project Brain — Chronological Log
 
-_Generated 2026-08-17 · 4 artifacts (newest first) + 3 roadmap features_
+_Generated 2026-08-22 · 7 artifacts (newest first) + 4 roadmap features_
+
+## 2026-08-22
+
+- **[Project tracing needs physical-source records plus occurrence replay](.cg-docs/solutions/testing-patterns/2026-08-22-project-tracing-source-aware-invariants.md)** · `solution` · _—_ · `2026-08-22`
+  > Project-wide tracing must support ordered file lists, manifests, and unordered directory discovery while preserving e…
+
+## 2026-08-21
+
+- **[2026-08-21-project-wide-tracing-with-source-lines-verify-review](.cg-docs/reviews/2026-08-21-project-wide-tracing-with-source-lines-verify-review.md)** · `review` · _—_ · `2026-08-21`
+  > **Review mode**: light verification
+- **[Project-wide tracing with source lines](.cg-docs/plans/2026-08-21-project-wide-tracing-with-source-lines.md)** · `plan` · _completed_ · `2026-08-21`
+  > Extend do2screen-py to trace a variable across an explicit ordered file list, a versioned JSON manifest, or a directo…
 
 ## 2026-08-17
 
@@ -19,5 +31,7 @@ _Generated 2026-08-17 · 4 artifacts (newest first) + 3 roadmap features_
   > Stata output snapshot infrastructure for CI-runnable differential testing
 - **[Set up project structure, implement core parsing pipeline, and establish differential testing.](roadmap.json#initial-focus)** · `feature` · _done_ · `—`
   > Set up project structure, implement core parsing pipeline, and establish differential testing.
+- **[Project-wide variable lifecycle tracking implementation](roadmap.json#project-wide-tracing-impl)** · `feature` · _done_ · `—`
+  > Project-wide variable lifecycle tracking implementation
 - **[Publish stata-command-registry to PyPI with variable_effect support](roadmap.json#registry-publication-prereq)** · `feature` · _planned_ · `—`
   > Publish stata-command-registry to PyPI with variable_effect support

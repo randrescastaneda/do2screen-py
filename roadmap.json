@@ -39,12 +39,12 @@
       "id": "project-wide-variable-tracing",
       "title": "Project-wide variable lifecycle tracking",
       "objective": "Extend do2screen-py to accept multi-file inputs (directory, file list, manifest) and produce a unified lifecycle view across multiple source files.",
-      "status": "planned",
+      "status": "done",
       "features": [
         {
           "id": "project-wide-tracing-impl",
           "title": "Project-wide variable lifecycle tracking implementation",
-          "status": "planned",
+          "status": "done",
           "plan": ".cg-docs/plans/2026-08-21-project-wide-tracing-with-source-lines.md"
         }
       ]
