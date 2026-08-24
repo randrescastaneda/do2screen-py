@@ -20,6 +20,12 @@ from pydantic import BaseModel, ConfigDict, Field
 #: Lifecycle effect of an attributed range.
 Kind = Literal["created", "modified", "dropped", "labelled", "referenced"]
 
+#: Lifecycle effects that can appear in a resolved provenance statement.
+LifecycleKind = Literal["created", "modified", "dropped", "labelled"]
+
+#: Ordering semantics of a provenance chunk.
+ProvenanceOrdering = Literal["execution", "per_source"]
+
 # Public project input modes. Legacy single-file traces use ``None`` for the
 # additive ``TraceResult.input_mode`` field.
 ProjectInputMode = Literal["files", "directory", "manifest"]
@@ -180,6 +186,46 @@ class ProjectDiagnostic(BaseModel):
     range: LineRange | None = None
 
 
+class VariableEffect(BaseModel):
+    """One lifecycle effect retained in a provenance statement."""
+
+    model_config = ConfigDict(frozen=True)
+
+    variable: str
+    kind: LifecycleKind
+
+
+class ProvenanceStatement(BaseModel):
+    """One physical statement occurrence in a resolved lineage slice."""
+
+    model_config = ConfigDict(frozen=True)
+
+    range: LineRange
+    effects: list[VariableEffect] = Field(default_factory=list)
+    occurrence_sequence: int | None = None
+
+
+class VariableProvenanceChunk(BaseModel):
+    """Human-auditable lifecycle slice for one requested variable.
+
+    The text is a contiguous, marked source block for display. It is not a
+    standalone executable Stata program: dataset loading, macros, control flow,
+    restructuring, and user-written commands may still be required.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    variable: str
+    lineage_variables: list[str] = Field(default_factory=list)
+    ordering: ProvenanceOrdering
+    statements: list[ProvenanceStatement] = Field(default_factory=list)
+    text: str = ""
+    lineage_variables_without_ranges: list[str] = Field(default_factory=list)
+    standalone_execution: Literal["not_assessed"] = "not_assessed"
+    unresolved_blocks: list[UnresolvedBlock] = Field(default_factory=list)
+    project_diagnostics: list[ProjectDiagnostic] = Field(default_factory=list)
+
+
 class TraceResult(BaseModel):
     """The full result of tracing one variable through one source graph.
 
@@ -201,6 +247,7 @@ class TraceResult(BaseModel):
         variable_identities: Occurrence-qualified project definition contexts.
         manifest_path: Canonical manifest path for manifest input, if any.
         project_diagnostics: Non-terminal project uncertainty and input facts.
+        provenance_chunk: Human-auditable resolved lineage slice for the target.
     """
 
     model_config = ConfigDict(frozen=True)
@@ -218,3 +265,4 @@ class TraceResult(BaseModel):
     variable_identities: list[VariableIdentity] = Field(default_factory=list)
     manifest_path: str | None = None
     project_diagnostics: list[ProjectDiagnostic] = Field(default_factory=list)
+    provenance_chunk: VariableProvenanceChunk | None = None

@@ -8,12 +8,15 @@ from pydantic import ValidationError
 from do2screen.models import (
     LineRange,
     ProjectDiagnostic,
+    ProvenanceStatement,
     RangeAttribution,
     SourceProvenance,
     TraceResult,
     UnresolvedBlock,
     VariableContext,
+    VariableEffect,
     VariableIdentity,
+    VariableProvenanceChunk,
     VariableTrace,
 )
 
@@ -219,4 +222,48 @@ def test_legacy_result_defaults_new_project_fields():
     assert result.variable_identities == []
     assert result.manifest_path is None
     assert result.project_diagnostics == []
+    assert result.provenance_chunk is None
     assert result.ranges == []
+
+
+def test_provenance_models_are_frozen_and_round_trip():
+    source = _provenance()
+    line_range = LineRange(
+        source="a.do",
+        start_line=1,
+        end_line=2,
+        source_lines=["gen x = 1 + ///", "  2"],
+    )
+    statement = ProvenanceStatement(
+        range=line_range,
+        effects=[VariableEffect(variable="x", kind="created")],
+        occurrence_sequence=4,
+    )
+    chunk = VariableProvenanceChunk(
+        variable="x",
+        lineage_variables=["x", "external"],
+        ordering="execution",
+        statements=[statement],
+        text="* [a.do:1-2 | x:created | occurrence:4]\n"
+        "gen x = 1 + ///\n  2",
+        lineage_variables_without_ranges=["external"],
+    )
+    result = TraceResult(
+        variable="x",
+        coverage=1.0,
+        source=source,
+        sources=[source],
+        provenance_chunk=chunk,
+    )
+    loaded = TraceResult.model_validate_json(result.model_dump_json())
+    assert loaded == result
+    assert loaded.provenance_chunk.standalone_execution == "not_assessed"
+    with pytest.raises(ValidationError):
+        chunk.variable = "other"  # type: ignore[misc]
+
+
+def test_provenance_chunk_defaults_are_independent():
+    first = VariableProvenanceChunk(variable="first", ordering="execution")
+    second = VariableProvenanceChunk(variable="second", ordering="execution")
+    first.lineage_variables.append("x")
+    assert second.lineage_variables == []

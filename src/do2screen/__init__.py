@@ -24,14 +24,19 @@ from __future__ import annotations
 
 from do2screen.cli import main
 from do2screen.models import (
+    LifecycleKind,
     LineRange,
     ProjectDiagnostic,
+    ProvenanceOrdering,
+    ProvenanceStatement,
     RangeAttribution,
     SourceProvenance,
     TraceResult,
     UnresolvedBlock,
+    VariableEffect,
     VariableContext,
     VariableIdentity,
+    VariableProvenanceChunk,
     VariableTrace,
 )
 from do2screen.registry import RegistryIncompatibilityError
@@ -40,15 +45,20 @@ from do2screen.trace import trace, trace_directory, trace_files, trace_manifest
 __version__ = "0.1.0"
 
 __all__ = [
+    "LifecycleKind",
     "LineRange",
     "ProjectDiagnostic",
+    "ProvenanceOrdering",
+    "ProvenanceStatement",
     "RangeAttribution",
     "RegistryIncompatibilityError",
     "SourceProvenance",
     "TraceResult",
     "UnresolvedBlock",
+    "VariableEffect",
     "VariableContext",
     "VariableIdentity",
+    "VariableProvenanceChunk",
     "VariableTrace",
     "main",
     "trace",
