@@ -23,6 +23,7 @@ def test_valid_invocation_writes_single_json(tmp_path, capsys):
     assert "attributed_ranges" in data
     assert "unresolved_blocks" in data
     assert "coverage" in data
+    assert data["provenance_chunk"]["variable"] == "x"
     assert "error" not in err
 
 
@@ -75,6 +76,56 @@ def test_deterministic_stdout(tmp_path, capsys):
     first = capsys.readouterr().out
     main([str(path), "x"])
     assert capsys.readouterr().out == first
+
+
+def test_markdown_format_renders_contiguous_lineage_and_assessment(tmp_path, capsys):
+    path = write_do(tmp_path, "f.do", "gen y = 1\ngen x = y + 1\n")
+    assert main([str(path), "x", "--format", "markdown"]) == 0
+    out, err = capsys.readouterr()
+    assert err == ""
+    assert out.startswith("# Variable provenance: x\n")
+    assert "Resolved lineage slice." in out
+    assert "Standalone Stata execution is not assessed." in out
+    assert "Ordering: execution order." in out
+    assert "## Resolved lineage code" in out
+    assert "```stata\n" in out
+    assert "gen y = 1\n\n* [" in out
+    assert "gen x = y + 1" in out
+    assert "## Potential replication context" in out
+    assert "No unresolved blocks or project diagnostics were recorded." in out
+
+
+def test_markdown_format_renders_unresolved_context(tmp_path, capsys):
+    path = write_do(tmp_path, "f.do", "gen x = 1\nunknown_command x\n")
+    assert main([str(path), "x", "--format", "markdown"]) == 0
+    out, _ = capsys.readouterr()
+    assert "## Potential replication context" in out
+    assert "Reason: unknown_command" in out
+    assert "Source range:" in out
+    assert "Context:" in out
+    assert "Statement:" in out
+    assert "unknown_command x" in out
+    assert "Source lines:" in out
+
+
+def test_markdown_format_is_deterministic_and_ignores_indent(tmp_path, capsys):
+    path = write_do(tmp_path, "f.do", 'gen x = "```"\n')
+    assert main([str(path), "x", "--format", "markdown", "--indent", "0"]) == 0
+    first = capsys.readouterr().out
+    assert main([str(path), "x", "--format", "markdown", "--indent", "4"]) == 0
+    second = capsys.readouterr().out
+    assert second == first
+    assert "````stata\n" in first
+    assert "gen x = \"```\"" in first
+
+
+def test_markdown_format_empty_target_is_explicit(tmp_path, capsys):
+    path = write_do(tmp_path, "f.do", "gen y = 1\n")
+    assert main([str(path), "missing", "--format", "markdown"]) == 0
+    out, _ = capsys.readouterr()
+    assert "Lineage variables without lifecycle ranges:" in out
+    assert "- `missing`" in out
+    assert "No selected lifecycle statements were resolved." in out
 
 
 def test_module_invocation_smoke(tmp_path):

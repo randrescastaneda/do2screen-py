@@ -1,15 +1,17 @@
-"""JSON-only command-line interface.
+"""Command-line interface for JSON and Markdown provenance output.
 
-``do2screen PATH VARIABLE [--no-follow-parents] [--labels] [--indent N]``
+``do2screen PATH VARIABLE [--no-follow-parents] [--labels] [--format FORMAT]
+[--indent N]``
 
 Project modes use ``--variable`` with exactly one of ``--dir``, ``--files``,
 or ``--manifest``.
 
-Writes exactly one ``TraceResult`` JSON document to stdout on success and
-diagnostic messages to stderr. Project diagnostics are included in the JSON;
-they are not printed as errors. Exit codes are 0 for complete or partial
-project results, 1 for unreadable single-file input, registry incompatibility,
-or a project with no readable roots, and 2 for invalid invocation/schema.
+Writes exactly one ``TraceResult`` JSON document, or one Markdown provenance
+document when ``--format markdown`` is selected, to stdout on success. Project
+diagnostics are included in JSON and Markdown; they are not printed as errors.
+Exit codes are 0 for complete or partial project results, 1 for unreadable
+single-file input, registry incompatibility, or a project with no readable
+roots, and 2 for invalid invocation/schema.
 """
 
 from __future__ import annotations
@@ -21,6 +23,7 @@ import re
 import sys
 
 from do2screen.registry import RegistryIncompatibilityError
+from do2screen.provenance import render_markdown
 from do2screen.trace import trace, trace_directory, trace_files, trace_manifest
 
 #: Rejects variable arguments that cannot name a Stata variable.
@@ -74,6 +77,12 @@ def build_parser() -> argparse.ArgumentParser:
         type=int,
         default=2,
         help="JSON indentation level (default: 2).",
+    )
+    parser.add_argument(
+        "--format",
+        choices=("json", "markdown"),
+        default="json",
+        help="Output format (default: json).",
     )
     return parser
 
@@ -181,9 +190,12 @@ def main(argv: list[str] | None = None) -> int:
         print(f"do2screen: error: {exc}", file=sys.stderr)
         return 2
 
-    indent = max(0, args.indent)
-    payload = json.loads(result.model_dump_json())
-    print(json.dumps(payload, indent=indent))
+    if args.format == "markdown":
+        print(render_markdown(result))
+    else:
+        indent = max(0, args.indent)
+        payload = json.loads(result.model_dump_json())
+        print(json.dumps(payload, indent=indent))
     return 0
 
 
