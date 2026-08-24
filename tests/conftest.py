@@ -1,7 +1,7 @@
 """Shared pytest fixtures and helpers.
 
 All tracing helpers here use the mock registry so the full classification path
-runs deterministically without the unpublished ``stata-command-registry``.
+runs deterministically without requiring the optional upstream registry.
 """
 
 from __future__ import annotations

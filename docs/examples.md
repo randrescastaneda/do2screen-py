@@ -43,8 +43,8 @@ label variable total_income "Total household income"
 - `ranges`: line 4 (where `income` is created by `gen income = wages + transfers`)
 - `ancestors`: `["wages", "transfers"]` -- the two variables `income` depends on
 - `coverage`: 1.0 -- every executable line is attributed to some variable
-- The `rename` on line 5 is attributed to `income` (the variable is renamed, not
-  dropped and re-created)
+- The rename on line 5 appears in the audit inventory as an `income` reference and
+  a `total_income` creation. Trace `total_income` to follow the renamed variable.
 
 ---
 
@@ -80,13 +80,13 @@ gen out = new_name * 2
 
 **Result:**
 
-- `ranges`: line 2 (created as `old_name`), line 3 (modified as `old_name`),
-  line 4 (renamed to `new_name`)
-- `ancestors`: `[]` -- `new_name` has no upstream dependencies beyond `old_name`,
-  which *is* `new_name` after the rename
+- `ranges`: line 4 (the rename creates `new_name`)
+- `ancestors`: `["old_name"]` -- the rename carries the old variable into the new
+  name. The earlier `old_name` lifecycle lines remain under `old_name` in the
+  audit inventory.
 
-The rename is tracked as a single lineage: `old_name` becomes `new_name`, so all
-prior lifecycle events belong to the same variable.
+The rename is tracked through a generic dependency edge: `old_name` is the source
+of the `new_name` definition, without rewriting earlier physical ranges.
 
 ---
 
@@ -346,3 +346,61 @@ gen other = income * 2
     By default, label events are excluded from lifecycle ranges to match the
     behaviour of do2screen (Stata). Use `--labels` / `include_labels=True` when
     you need them.
+
+---
+
+## 9. Project Inputs
+
+Project tracing accepts an explicitly ordered file list, a manifest V1 file, or
+a directory corpus:
+
+=== "Files"
+
+    ```sh
+    do2screen --variable income --files 01-clean.do 02-build.do
+    ```
+
+    ```python
+    from do2screen import trace_files
+
+    result = trace_files(["01-clean.do", "02-build.do"], "income")
+    ```
+
+=== "Manifest"
+
+    ```json
+    {"version": 1, "files": ["01-clean.do", "02-build.do"]}
+    ```
+
+    ```sh
+    do2screen --variable income --manifest project.json
+    ```
+
+    ```python
+    from do2screen import trace_manifest
+
+    result = trace_manifest("project.json", "income")
+    ```
+
+=== "Directory"
+
+    ```sh
+    do2screen --variable income --dir scripts --recursive
+    ```
+
+    ```python
+    from do2screen import trace_directory
+
+    result = trace_directory("scripts", "income", recursive=True)
+    ```
+
+Explicit files and manifest entries define execution order. Directory discovery
+is deterministic but unordered, so ambiguous cross-file ancestry is omitted and
+reported as a `cross_file_unordered` item in `result.project_diagnostics`.
+Missing inputs may also appear there on a successful partial result. A project
+with no readable roots exits with code `1` and writes no success JSON.
+
+The optional `[registry]` extra is required for project tracing because include
+drivers must come from the upstream `stata-registry>=0.4.0` source-driver
+contract. The package does not execute Stata or make network calls while
+tracing.

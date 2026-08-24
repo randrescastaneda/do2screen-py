@@ -13,6 +13,8 @@ never hardcodes Stata command names.
 Public API:
 
 - :func:`trace` -- the entry point.
+- :func:`trace_files`, :func:`trace_directory`, and :func:`trace_manifest` --
+  project input modes.
 - :class:`TraceResult` and its public submodels -- the semver-locked contract.
 - :class:`RegistryIncompatibilityError` -- raised when the registry cannot
   serve lookups (absent or API-incompatible).
@@ -23,25 +25,34 @@ from __future__ import annotations
 from do2screen.cli import main
 from do2screen.models import (
     LineRange,
+    ProjectDiagnostic,
     RangeAttribution,
     SourceProvenance,
     TraceResult,
     UnresolvedBlock,
+    VariableContext,
+    VariableIdentity,
     VariableTrace,
 )
 from do2screen.registry import RegistryIncompatibilityError
-from do2screen.trace import trace
+from do2screen.trace import trace, trace_directory, trace_files, trace_manifest
 
 __version__ = "0.1.0"
 
 __all__ = [
     "LineRange",
+    "ProjectDiagnostic",
     "RangeAttribution",
     "RegistryIncompatibilityError",
     "SourceProvenance",
     "TraceResult",
     "UnresolvedBlock",
+    "VariableContext",
+    "VariableIdentity",
     "VariableTrace",
     "main",
     "trace",
+    "trace_directory",
+    "trace_files",
+    "trace_manifest",
 ]

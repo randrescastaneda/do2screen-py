@@ -94,11 +94,13 @@ variables:
   income_total:
     create: [137]
     modify: [138, 139]
-    reference: [155]
+    reference: [138, 139, 155]
     ancestors: [wage_monthly, transfers]
     note: >
-      Lines 138 and 139 read income_total to write income_total. Must not
-      recurse infinitely and must not list income_total as its own ancestor.
+      Lines 138 and 139 read income_total to write income_total, and line 155
+      reads it in an egen expression. All three are audit references. The
+      cycle-safe ancestor resolver must not list income_total as its own
+      ancestor.
 
   # Prefix stripping.
   hhsize:

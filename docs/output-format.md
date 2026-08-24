@@ -19,6 +19,11 @@ The top-level result of tracing one variable through one source graph.
 | `coverage` | `float` | Fraction of executable lines covered by at least one attribution |
 | `sources` | `list[SourceProvenance]` | Provenance of every traversed source, in traversal order |
 | `source` | `SourceProvenance` | Provenance of the root/target source |
+| `input_mode` | `"files" \| "directory" \| "manifest" \| None` | Project input mode; `None` for legacy `trace()` |
+| `project_files` | `list[str]` | Canonical accepted inputs and sources reached by includes |
+| `variable_identities` | `list[VariableIdentity]` | Occurrence-qualified definition contexts |
+| `manifest_path` | `str \| None` | Canonical manifest path for manifest input |
+| `project_diagnostics` | `list[ProjectDiagnostic]` | Non-terminal project uncertainty and input facts |
 
 ---
 
@@ -33,10 +38,16 @@ An inclusive range of physical source lines.
 | `end_line` | `int` | Last physical line (1-based, inclusive) |
 | `comment_start_line` | `int \| None` | First line of a preceding full-line comment |
 | `comment_end_line` | `int \| None` | Last line of that preceding comment |
+| `source_lines` | `list[str]` | Decoded physical lines from `start_line` through `end_line`, without terminators |
 
 When a statement is preceded by a contiguous block of full-line comments, the
 comment range is included so the consumer can display the comments alongside the
 code.
+
+`source_lines` is inclusive and ordered, so its length is
+`end_line - start_line + 1`. Text is decoded as UTF-8 after removing a leading
+BOM; undecodable bytes use the replacement character. The payload is physical
+line text, not reconstructed statement text and not byte-for-byte source data.
 
 ---
 
@@ -113,6 +124,32 @@ Provenance metadata for one traversed source file.
 | `line_count` | `int` | Number of physical lines |
 | `used_delimit` | `bool` | True when the source uses `#delimit ;` anywhere |
 | `traversal_index` | `int` | Ordered index in depth-first traversal (0 = root) |
+
+## Project Metadata
+
+`VariableIdentity` groups occurrence-qualified definition contexts for one
+variable. Each `VariableContext` records its canonical source, first creation
+line, lifecycle ranges, direct parents, and caller provenance when reached
+through an include.
+
+`ProjectDiagnostic` is separate from `UnresolvedBlock`. It may have no range
+and never changes the terminal parser partition. Typical codes include
+`missing_root`, `unresolved_manifest_file`, `empty_directory`,
+`cross_file_unordered`, and `unbound_reference`.
+
+All added `TraceResult` project fields are defaulted, so legacy JSON without
+them remains valid. Legacy `trace()` results use `input_mode: null`, an empty
+`project_files` list, no variable identities, no manifest path, and an empty
+`project_diagnostics` list.
+
+For ordered project inputs, definitions are occurrence-qualified and references
+bind to the latest active preceding definition. A drop deactivates that
+definition; a later creation starts a new context. Include bodies are replayed
+at each call site, so repeated includes produce repeated lifecycle occurrences
+without duplicating the physical source inventory. Directory ordering is never
+used as execution order. In ordered modes, `source` is the first requested root;
+in directory mode, it is the first canonical discovery input even when that
+input cannot be read. This provenance field does not establish semantic order.
 
 ---
 
@@ -197,6 +234,10 @@ Key details:
 
 | Code | Meaning |
 |---|---|
-| `0` | Success -- `TraceResult` JSON written to stdout |
-| `1` | Unreadable file or registry incompatibility (error on stderr) |
-| `2` | Invalid arguments (error on stderr) |
+| `0` | Complete or partial project result; one `TraceResult` JSON document is written to stdout |
+| `1` | Unreadable legacy input, registry incompatibility, or project with no readable roots; message on stderr and no success JSON |
+| `2` | Invalid invocation or manifest schema; usage message on stderr |
+
+Project input diagnostics are serialized in `project_diagnostics` on successful
+partial results. They are not emitted as stderr errors. Parser terminal
+uncertainty remains in `unresolved_blocks`.

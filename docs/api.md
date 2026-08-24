@@ -8,6 +8,18 @@ Auto-generated from source docstrings.
 
 ::: do2screen.trace.trace
 
+## Project Tracing
+
+The three project functions return the same `TraceResult` contract as `trace()`.
+They differ only in ingestion: explicit file lists and manifests are ordered;
+directory discovery is deterministic but unordered.
+
+::: do2screen.trace.trace_files
+
+::: do2screen.trace.trace_directory
+
+::: do2screen.trace.trace_manifest
+
 ---
 
 ## Models
@@ -45,6 +57,24 @@ Auto-generated from source docstrings.
 ### SourceProvenance
 
 ::: do2screen.models.SourceProvenance
+
+---
+
+### VariableContext
+
+::: do2screen.models.VariableContext
+
+---
+
+### VariableIdentity
+
+::: do2screen.models.VariableIdentity
+
+---
+
+### ProjectDiagnostic
+
+::: do2screen.models.ProjectDiagnostic
 
 ---
 

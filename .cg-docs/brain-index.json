@@ -1,5 +1,5 @@
 {
-  "edge_count": 2,
+  "edge_count": 5,
   "edges": [
     {
       "edge_type": "reviews",
@@ -11,6 +11,24 @@
       "edge_type": "verifies",
       "source": ".cg-docs/reviews/2026-08-17-do2screen-py-parser-pipeline-verify-review.md",
       "target": ".cg-docs/reviews/2026-08-17-do2screen-py-parser-pipeline-review.md",
+      "target_missing": false
+    },
+    {
+      "edge_type": "reviews",
+      "source": ".cg-docs/reviews/2026-08-21-project-wide-tracing-with-source-lines-verify-review.md",
+      "target": ".cg-docs/plans/2026-08-21-project-wide-tracing-with-source-lines.md",
+      "target_missing": false
+    },
+    {
+      "edge_type": "verifies",
+      "source": ".cg-docs/reviews/2026-08-21-project-wide-tracing-with-source-lines-verify-review.md",
+      "target": ".cg-docs/reviews/2026-08-17-do2screen-py-parser-pipeline-review.md",
+      "target_missing": false
+    },
+    {
+      "edge_type": "references",
+      "source": ".cg-docs/solutions/testing-patterns/2026-08-22-project-tracing-source-aware-invariants.md",
+      "target": ".cg-docs/plans/2026-08-21-project-wide-tracing-with-source-lines.md",
       "target_missing": false
     }
   ],
@@ -41,6 +59,37 @@
         "variable_effect",
         "do2screen_stata_bin",
         "variabletrace"
+      ]
+    },
+    {
+      "date": "2026-08-21",
+      "entity_type": "plan",
+      "path": ".cg-docs/plans/2026-08-21-project-wide-tracing-with-source-lines.md",
+      "slug": "2026-08-21-project-wide-tracing-with-source-lines",
+      "status": "completed",
+      "summary": "Extend do2screen-py to trace a variable across an explicit ordered file list, a versioned JSON manifest, or a directory corpus. Include the exact physical code lines for every returned source range so JSON consumers receive the code and its provenance together. Preserve single-file `trace()` behavior and every existing parser invariant.",
+      "tags": [
+        "parser",
+        "stata",
+        "tracing",
+        "source-lines",
+        "multi-file",
+        "manifest",
+        "cli",
+        "reviewed"
+      ],
+      "title": "Project-wide tracing with source lines",
+      "top_keywords": [
+        "test scenarios",
+        "test_project.py",
+        "linerange",
+        "project",
+        "projectdiagnostic",
+        "phase",
+        "cross_file_unordered",
+        "stata-registry>=0.4.0",
+        "source",
+        "traceresult"
       ]
     },
     {
@@ -88,6 +137,28 @@
       ]
     },
     {
+      "date": "2026-08-21",
+      "entity_type": "review",
+      "path": ".cg-docs/reviews/2026-08-21-project-wide-tracing-with-source-lines-verify-review.md",
+      "slug": "2026-08-21-project-wide-tracing-with-source-lines-verify-review",
+      "status": "",
+      "summary": "**Review mode**: light verification",
+      "tags": [],
+      "title": "2026-08-21-project-wide-tracing-with-source-lines-verify-review",
+      "top_keywords": [
+        "test_project.py",
+        "2026-08-17-do2screen-py-parser-pipeline-review.md",
+        "parser.py",
+        "review",
+        "source",
+        "passed",
+        "reviews",
+        "verify",
+        "compileall",
+        "do2screen_stata_bin"
+      ]
+    },
+    {
       "date": "2026-08-17",
       "entity_type": "solution",
       "path": ".cg-docs/solutions/testing-patterns/2026-08-17-no-dropped-lines-invariant-and-source-aware-coverage.md",
@@ -114,6 +185,34 @@
         "lossless",
         "no-dropped-lines",
         "attributed"
+      ]
+    },
+    {
+      "date": "2026-08-22",
+      "entity_type": "solution",
+      "path": ".cg-docs/solutions/testing-patterns/2026-08-22-project-tracing-source-aware-invariants.md",
+      "slug": "2026-08-22-project-tracing-source-aware-invariants",
+      "status": "",
+      "summary": "Project-wide tracing must support ordered file lists, manifests, and unordered directory discovery while preserving exact physical source lines. A physical file can be included more than once, and two files can share the same physical line number. Treating a source path as both a parse cache key and an execution event loses repeated include occurrences; flattening line numbers loses coverage failures; and merging parents by variable name binds redefinitions incorrectly.",
+      "tags": [
+        "project-tracing",
+        "source-lines",
+        "include-cache",
+        "lineage",
+        "invariants"
+      ],
+      "title": "Project tracing needs physical-source records plus occurrence replay",
+      "top_keywords": [
+        "(source, line)",
+        "parsedfile",
+        "records",
+        "occurrence",
+        "project",
+        "tracing",
+        "replay",
+        "physical-source",
+        "plus",
+        "2026-08-21-project-wide-tracing-with-source-lines.md"
       ]
     },
     {
@@ -181,10 +280,32 @@
         "milestone",
         "cross-cutting"
       ]
+    },
+    {
+      "date": "",
+      "entity_type": "feature",
+      "path": "roadmap.json#project-wide-tracing-impl",
+      "slug": "project-wide-tracing-impl",
+      "status": "done",
+      "summary": "Project-wide variable lifecycle tracking implementation",
+      "tags": [],
+      "title": "Project-wide variable lifecycle tracking implementation",
+      "top_keywords": [
+        "lifecycle",
+        "project-wide",
+        "variable",
+        "tracking",
+        "implementation",
+        "feature",
+        "milestone",
+        "objective",
+        "extend",
+        "do2screen-py"
+      ]
     }
   ],
-  "entity_count": 7,
-  "generated": "2026-08-17",
+  "entity_count": 11,
+  "generated": "2026-08-22",
   "schema_version": "0.2.0",
   "topic_count": 0,
   "topics": []

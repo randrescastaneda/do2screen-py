@@ -4,6 +4,10 @@ from __future__ import annotations
 
 from tests.conftest import trace_text, write_do
 
+import pytest
+
+from do2screen.trace import trace_files
+
 
 def test_simple_lineage(tmp_path):
     text = "gen y = 2\ngen x = y + 1\n"
@@ -12,6 +16,7 @@ def test_simple_lineage(tmp_path):
     assert [r.start_line for r in result.ranges] == [2]
     assert result.ancestors == ["y"]
     assert result.ranges[0].source == str(path)
+    assert result.ranges[0].source_lines == ["gen x = y + 1"]
 
 
 def test_recursive_ancestors(tmp_path):
@@ -142,3 +147,89 @@ def test_include_coverage_is_source_aware(tmp_path):
     # executable pairs: (root,1),(root,2),(lib,1),(lib,2) = 4
     # covered:          (root,2),(lib,1),(lib,2)              = 3
     assert abs(result.coverage - 0.75) < 1e-9
+
+
+def test_source_lines_preserve_crlf_and_bom_decoding(tmp_path):
+    path = tmp_path / "physical.do"
+    path.write_bytes(b"\xef\xbb\xbfgen x = 1\r\nreplace x = 2\r\n")
+    result, _ = trace_text(tmp_path, "gen x = 1\nreplace x = 2\n", "x")
+    # The helper above uses a separate file; exercise the public parser directly
+    # for the physical CRLF/BOM representation.
+    from do2screen.parser import Parser
+    from do2screen.registry import RegistryAdapter
+    from do2screen.trace import build_result
+    from tests.mock_registry import MockStataRegistry
+
+    graph = Parser(RegistryAdapter(module=MockStataRegistry())).parse_graph(str(path))
+    physical = build_result(graph, "x", follow_parents=True)
+    assert physical.ranges[0].source_lines == ["gen x = 1"]
+    assert physical.ranges[1].source_lines == ["replace x = 2"]
+
+
+def test_source_lines_are_present_on_unresolved_ranges(tmp_path):
+    path = tmp_path / "unresolved.do"
+    path.write_text("gen x = 1\nnot_a_command y\n", encoding="utf-8")
+    from do2screen.parser import Parser
+    from do2screen.registry import RegistryAdapter
+    from do2screen.trace import build_result
+    from tests.mock_registry import MockStataRegistry
+
+    graph = Parser(RegistryAdapter(module=MockStataRegistry())).parse_graph(str(path))
+    result = build_result(graph, "x", follow_parents=True)
+    unresolved = next(block for block in result.unresolved_blocks if block.range.start_line == 2)
+    assert unresolved.range.source_lines == ["not_a_command y"]
+
+
+def test_source_lines_preserve_continuation_physical_range(tmp_path):
+    path = tmp_path / "continuation.do"
+    path.write_text("gen x = 1 + ///\n  2\n", encoding="utf-8")
+
+    from do2screen.parser import Parser
+    from do2screen.registry import RegistryAdapter
+    from do2screen.trace import build_result
+    from tests.mock_registry import MockStataRegistry
+
+    graph = Parser(RegistryAdapter(module=MockStataRegistry())).parse_graph(str(path))
+    result = build_result(graph, "x", follow_parents=True)
+    assert result.ranges[0].start_line == 1
+    assert result.ranges[0].end_line == 2
+    assert result.ranges[0].source_lines == ["gen x = 1 + ///", "  2"]
+
+
+def test_source_lines_preserve_semicolon_multiline_range(tmp_path):
+    path = tmp_path / "delimiter.do"
+    path.write_text(
+        "#delimit ;\nreplace x = 1 +\n  2;\n#delimit cr\n",
+        encoding="utf-8",
+    )
+
+    from do2screen.parser import Parser
+    from do2screen.registry import RegistryAdapter
+    from do2screen.trace import build_result
+    from tests.mock_registry import MockStataRegistry
+
+    graph = Parser(RegistryAdapter(module=MockStataRegistry())).parse_graph(str(path))
+    result = build_result(graph, "x", follow_parents=True)
+    modified = next(item for item in result.attributed_ranges if item.kind == "modified")
+    assert modified.range.start_line == 2
+    assert modified.range.end_line == 3
+    assert modified.range.source_lines == ["replace x = 1 +", "  2;"]
+
+
+def test_source_lines_preserve_replacement_characters(tmp_path, capsys):
+    path = tmp_path / "replacement.do"
+    path.write_bytes(b"gen x = 1\n\xffunknown y\n")
+    from do2screen.parser import Parser
+    from do2screen.registry import RegistryAdapter
+    from do2screen.trace import build_result
+    from tests.mock_registry import MockStataRegistry
+
+    graph = Parser(RegistryAdapter(module=MockStataRegistry())).parse_graph(str(path))
+    result = build_result(graph, "x", follow_parents=True)
+    assert result.unresolved_blocks[0].range.source_lines == ["\ufffdunknown y"]
+    assert "warning" in capsys.readouterr().err
+
+
+def test_trace_files_rejects_empty_input():
+    with pytest.raises(ValueError, match="at least one"):
+        trace_files([], "x")

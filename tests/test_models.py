@@ -7,10 +7,13 @@ from pydantic import ValidationError
 
 from do2screen.models import (
     LineRange,
+    ProjectDiagnostic,
     RangeAttribution,
     SourceProvenance,
     TraceResult,
     UnresolvedBlock,
+    VariableContext,
+    VariableIdentity,
     VariableTrace,
 )
 
@@ -136,7 +139,10 @@ def test_default_factories():
     assert vt.ranges == []
     assert vt.parents == []
     assert vt.ancestors == []
-    ub = UnresolvedBlock(range=LineRange(source="a.do", start_line=1, end_line=1), reason="macro_or_loop")
+    ub = UnresolvedBlock(
+        range=LineRange(source="a.do", start_line=1, end_line=1),
+        reason="macro_or_loop",
+    )
     assert ub.context == {}
     assert ub.statement is None
 
@@ -160,3 +166,57 @@ def test_path_serialized_as_string():
     dumped = source.model_dump()
     assert isinstance(dumped["path"], str)
     assert dumped["path"] == "nested/a.do"
+
+
+def test_source_lines_and_project_models_round_trip():
+    source = _provenance()
+    line_range = LineRange(
+        source="a.do",
+        start_line=2,
+        end_line=3,
+        source_lines=["gen x = 1", "replace x = 2"],
+    )
+    context = VariableContext(
+        source="a.do",
+        first_creation_line=2,
+        lifecycle_ranges=[line_range],
+        direct_parents=["base"],
+        caller_source="caller.do",
+        caller_range=LineRange(source="caller.do", start_line=4, end_line=4),
+    )
+    identity = VariableIdentity(variable="x", contexts=[context])
+    diagnostic = ProjectDiagnostic(code="cross_file_unordered", range=line_range)
+    result = TraceResult(
+        variable="x",
+        coverage=1.0,
+        source=source,
+        sources=[source],
+        ranges=[line_range],
+        variable_identities=[identity],
+        project_diagnostics=[diagnostic],
+    )
+    loaded = TraceResult.model_validate_json(result.model_dump_json())
+    assert loaded == result
+    assert loaded.ranges[0].source_lines == ["gen x = 1", "replace x = 2"]
+    assert loaded.variable_identities[0].contexts[0].caller_source == "caller.do"
+
+
+def test_legacy_result_defaults_new_project_fields():
+    source = _provenance()
+    legacy = {
+        "variable": "x",
+        "ranges": [],
+        "ancestors": [],
+        "attributed_ranges": [],
+        "unresolved_blocks": [],
+        "coverage": 1.0,
+        "sources": [source.model_dump()],
+        "source": source.model_dump(),
+    }
+    result = TraceResult.model_validate(legacy)
+    assert result.input_mode is None
+    assert result.project_files == []
+    assert result.variable_identities == []
+    assert result.manifest_path is None
+    assert result.project_diagnostics == []
+    assert result.ranges == []

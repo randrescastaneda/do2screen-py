@@ -16,15 +16,18 @@
 - [x] Unresolved block reporting (7 categories)
 - [x] Coverage metrics
 - [x] Label tracking (opt-in)
+- [x] Project-wide tracing with source lines (ordered files, manifests, and
+  deterministic directory discovery)
 
 ## Planned
 
 ### Cross-cutting Infrastructure Prerequisites
 
-- [ ] **Publish `stata-command-registry` to PyPI**
-    The registry supplies Stata command vocabulary. Until it is published under
-    the `stata-command-registry` distribution name, commands that cannot be
-    resolved are classified as `unknown_command` unresolved blocks.
+- [ ] **Track the upstream `stata-command-registry` repository**
+    The optional `[registry]` extra installs the latest available `main` commit
+    from the upstream repository at installation or explicit upgrade time. The
+    installed revision must satisfy the adapter contract; commands that cannot
+    be resolved are classified as `unknown_command` unresolved blocks.
 
 - [ ] **Stata output snapshot infrastructure for CI differential testing**
     Automate running do2screen (Stata) over the test corpus and comparing

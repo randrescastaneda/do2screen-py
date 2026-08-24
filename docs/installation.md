@@ -17,13 +17,18 @@ pip install do2screen-py
 pip install "do2screen-py[test]"       # pytest
 pip install "do2screen-py[dev]"        # build + pytest
 pip install "do2screen-py[docs]"       # mkdocs-material + mkdocstrings
+pip install "do2screen-py[registry]"   # latest upstream registry from GitHub main
 ```
 
 !!! note "About the `[registry]` extra"
-    `pip install "do2screen-py[registry]"` pulls `stata-command-registry`,
-    which is **not yet published to PyPI** under that distribution name. The
-    base install fully parses and reports: commands that cannot be resolved are
-    classified as `unknown_command` unresolved blocks rather than being dropped.
+    The `[registry]` extra installs the latest available commit on `main` from
+    the upstream `stata-command-registry` repository at install time. Refresh an
+    existing environment with `pip install --upgrade --no-cache-dir
+    "do2screen-py[registry]"`. The base install remains usable without the
+    registry; commands that cannot be resolved are classified as `unknown_command`
+    unresolved blocks rather than being dropped. Project APIs require a
+    conformant `stata-registry>=0.4.0` source-driver capability and fail
+    explicitly when it is unavailable.
 
 ## CLI Quickstart
 
@@ -32,6 +37,17 @@ After installation, the `do2screen` command is available:
 ```sh
 do2screen PATH VARIABLE [--no-follow-parents] [--labels] [--indent N]
 ```
+
+Project inputs use an explicit, unambiguous grammar:
+
+```sh
+do2screen --variable VARIABLE --dir DIR [--recursive]
+do2screen --variable VARIABLE --files FILE [FILE ...]
+do2screen --variable VARIABLE --manifest MANIFEST
+```
+
+`--variable` is required with a project input flag and is not used with the
+legacy positional form. `--recursive` is valid only with `--dir`.
 
 **Arguments:**
 
@@ -60,12 +76,17 @@ do2screen data/clean.do income --labels --indent 4
 
 | Code | Meaning |
 |---|---|
-| `0` | Success |
-| `1` | Unreadable file or registry incompatibility |
-| `2` | Invalid arguments |
+| `0` | Complete or partial project result with one JSON document on stdout |
+| `1` | Unreadable legacy input, registry incompatibility, or no readable project roots |
+| `2` | Invalid invocation or manifest schema |
 
-The CLI writes exactly one `TraceResult` JSON document to stdout. Diagnostics
-go to stderr.
+The CLI writes exactly one `TraceResult` JSON document to stdout on successful
+legacy or project tracing. A project with at least one readable root may return
+partial results with input or ordering facts in `project_diagnostics`; this is
+still exit code `0`. A project with no readable roots exits `1` and writes no
+success JSON. Invalid invocation and invalid manifest schema exit `2`.
+Diagnostics that are part of a successful result are JSON fields, not stderr
+errors. Human-readable failures and warnings go to stderr.
 
 ## Python API Quickstart
 
@@ -103,6 +124,53 @@ trace(
 | `variable` | (required) | Variable name to trace |
 | `follow_parents` | `True` | Resolve ancestor variables recursively |
 | `include_labels` | `False` | Include `label variable` events in lifecycle ranges |
+
+### Project API
+
+```python
+from do2screen import trace_directory, trace_files, trace_manifest
+
+trace_files(
+    files: list[str | os.PathLike[str]] | tuple[str | os.PathLike[str], ...],
+    variable: str,
+    *,
+    follow_parents: bool = True,
+    include_labels: bool = False,
+) -> TraceResult
+
+trace_directory(
+    directory: str | os.PathLike[str],
+    variable: str,
+    *,
+    recursive: bool = False,
+    follow_parents: bool = True,
+    include_labels: bool = False,
+) -> TraceResult
+
+trace_manifest(
+    manifest_path: str | os.PathLike[str],
+    variable: str,
+    *,
+    follow_parents: bool = True,
+    include_labels: bool = False,
+) -> TraceResult
+```
+
+`trace_files` and `trace_manifest` use the supplied order as execution order.
+`trace_directory` sorts visible `.do` and `.ado` files deterministically but
+does not infer execution order; ambiguous cross-file lineage is reported by
+`cross_file_unordered` diagnostics.
+
+Manifest V1 is exactly:
+
+```json
+{"version": 1, "files": ["relative/path.do"]}
+```
+
+Unknown keys, non-integer versions, non-string entries, empty arrays, and
+unsupported versions are rejected. Relative entries are resolved from the
+manifest directory, absolute entries are canonicalized, and duplicate
+canonical paths keep their first occurrence.
 
 ## Development Setup
 

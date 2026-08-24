@@ -14,6 +14,7 @@ from __future__ import annotations
 import os
 from collections.abc import Iterable
 
+from do2screen.ingest import directory_spec, files_spec, manifest_spec
 from do2screen.models import SourceProvenance, TraceResult, VariableTrace
 from do2screen.parser import ParsedGraph, Parser
 from do2screen.registry import RegistryAdapter
@@ -152,4 +153,77 @@ def trace(
     return result
 
 
-__all__ = ["VariableTrace", "trace"]
+def trace_files(
+    files: list[str | os.PathLike[str]] | tuple[str | os.PathLike[str], ...],
+    variable: str,
+    *,
+    follow_parents: bool = True,
+    include_labels: bool = False,
+) -> TraceResult:
+    """Trace *variable* through an explicitly ordered list of source files.
+
+    Duplicate paths are retained as separate root occurrences so execution
+    order remains observable; each physical source is still parsed once.
+    """
+    from do2screen.project import trace_project
+
+    return trace_project(
+        files_spec(files),
+        variable,
+        follow_parents=follow_parents,
+        include_labels=include_labels,
+    )
+
+
+def trace_directory(
+    directory: str | os.PathLike[str],
+    variable: str,
+    *,
+    recursive: bool = False,
+    follow_parents: bool = True,
+    include_labels: bool = False,
+) -> TraceResult:
+    """Trace *variable* through visible ``.do``/``.ado`` files in a directory.
+
+    Discovery is deterministic but semantically unordered. Cross-file lineage
+    is therefore omitted when no explicit occurrence order exists and is
+    reported in ``project_diagnostics``.
+    """
+    from do2screen.project import trace_project
+
+    return trace_project(
+        directory_spec(directory, recursive=recursive),
+        variable,
+        follow_parents=follow_parents,
+        include_labels=include_labels,
+    )
+
+
+def trace_manifest(
+    manifest_path: str | os.PathLike[str],
+    variable: str,
+    *,
+    follow_parents: bool = True,
+    include_labels: bool = False,
+) -> TraceResult:
+    """Trace *variable* through the ordered files in a manifest V1 document.
+
+    Manifest V1 accepts exactly ``{"version": 1, "files": [strings]}``.
+    """
+    from do2screen.project import trace_project
+
+    return trace_project(
+        manifest_spec(manifest_path),
+        variable,
+        follow_parents=follow_parents,
+        include_labels=include_labels,
+    )
+
+
+__all__ = [
+    "VariableTrace",
+    "trace",
+    "trace_directory",
+    "trace_files",
+    "trace_manifest",
+]

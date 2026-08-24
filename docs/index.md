@@ -37,6 +37,10 @@ data values.
     ---
     Follow `include` directives across multiple files and attribute code to the correct source.
 
+- :material-folder-multiple: **Project Inputs**
+    ---
+    Trace explicit file lists, manifest V1 documents, or deterministic directory corpora.
+
 - :material-alert-circle-outline: **Unresolved Block Reporting**
     ---
     Seven explicit categories for code the parser could not attribute -- never silently dropped.
@@ -122,7 +126,8 @@ The output is:
       "start_line": 4,
       "end_line": 4,
       "comment_start_line": 1,
-      "comment_end_line": 1
+      "comment_end_line": 1,
+      "source_lines": ["gen income = wages + transfers"]
     }
   ],
   "ancestors": [
@@ -147,7 +152,7 @@ The output is:
     },
     {
       "range": { "source": "...", "start_line": 5, "end_line": 5 },
-      "variable": "income",
+      "variable": "total_income",
       "kind": "created"
     },
     {
@@ -174,6 +179,11 @@ The output is:
   }
 }
 ```
+
+Project results add `input_mode`, `project_files`, `variable_identities`,
+`manifest_path`, and `project_diagnostics`. `project_diagnostics` is a
+non-terminal JSON channel for missing inputs and unordered cross-file
+ambiguity; parser uncertainty remains in `unresolved_blocks`.
 
 ---
 

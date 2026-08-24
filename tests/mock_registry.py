@@ -1,7 +1,8 @@
 """A stub implementation of the ``stata_registry`` contract for tests.
 
-The real ``stata-command-registry`` is not published yet, so tests exercise the
-parser against this mock. It implements the documented adapter contract:
+The optional upstream ``stata-command-registry`` dependency is not required for
+unit tests, so tests exercise the parser against this mock. It implements the
+documented adapter contract:
 ``canonical_command``, ``is_prefix``, ``variable_effect``, plus the optional
 ``is_include`` extension. It intentionally mirrors the abbreviation rules that
 matter for the acceptance tests (for example ``generate`` abbreviates to
@@ -36,6 +37,8 @@ _INCLUDES = {"include", "do", "run"}
 
 class MockStataRegistry:
     """Deterministic stand-in for ``stata_registry``."""
+
+    __version__ = "0.4.0"
 
     def __repr__(self) -> str:
         return "<MockStataRegistry>"

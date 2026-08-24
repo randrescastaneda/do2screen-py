@@ -2,9 +2,14 @@
 
 ``do2screen PATH VARIABLE [--no-follow-parents] [--labels] [--indent N]``
 
-Writes exactly one ``TraceResult`` JSON document to stdout and any diagnostics
-to stderr. Exit codes: 0 on success, 2 on usage/argument errors, and 1 on
-unreadable files or registry incompatibility. Deterministic and offline.
+Project modes use ``--variable`` with exactly one of ``--dir``, ``--files``,
+or ``--manifest``.
+
+Writes exactly one ``TraceResult`` JSON document to stdout on success and
+diagnostic messages to stderr. Project diagnostics are included in the JSON;
+they are not printed as errors. Exit codes are 0 for complete or partial
+project results, 1 for unreadable single-file input, registry incompatibility,
+or a project with no readable roots, and 2 for invalid invocation/schema.
 """
 
 from __future__ import annotations
@@ -16,7 +21,7 @@ import re
 import sys
 
 from do2screen.registry import RegistryIncompatibilityError
-from do2screen.trace import trace
+from do2screen.trace import trace, trace_directory, trace_files, trace_manifest
 
 #: Rejects variable arguments that cannot name a Stata variable.
 _VARIABLE_RE = re.compile(r"^[^ \t\n\r,;()=]+$")
@@ -31,8 +36,29 @@ def build_parser() -> argparse.ArgumentParser:
             "physical source line ranges."
         ),
     )
-    parser.add_argument("path", help="Path to the Stata do file.")
-    parser.add_argument("variable", help="Variable name to trace.")
+    parser.add_argument("path", nargs="?", help="Path to the Stata do file.")
+    parser.add_argument("variable", nargs="?", help="Variable name to trace.")
+    inputs = parser.add_mutually_exclusive_group()
+    inputs.add_argument("--dir", dest="directory", help="Trace a directory corpus.")
+    inputs.add_argument(
+        "--files",
+        nargs="+",
+        help="Trace an explicitly ordered list of source files.",
+    )
+    inputs.add_argument(
+        "--manifest",
+        help="Trace files listed by a manifest V1 JSON file.",
+    )
+    parser.add_argument(
+        "--variable",
+        dest="project_variable",
+        help="Variable to trace in project input modes.",
+    )
+    parser.add_argument(
+        "--recursive",
+        action="store_true",
+        help="Recursively discover source files with --dir.",
+    )
     parser.add_argument(
         "--no-follow-parents",
         action="store_true",
@@ -66,32 +92,88 @@ def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
 
-    if not _VARIABLE_RE.match(args.variable):
+    project_mode = any(
+        value is not None for value in (args.directory, args.files, args.manifest)
+    )
+    if project_mode:
+        if args.path is not None or args.variable is not None:
+            parser.error("positional PATH VARIABLE cannot be combined with project input flags")
+        if args.project_variable is None:
+            parser.error("--variable is required with a project input flag")
+        variable = args.project_variable
+        if args.recursive and args.directory is None:
+            parser.error("--recursive is valid only with --dir")
+    else:
+        if args.project_variable is not None:
+            parser.error("--variable requires --dir, --files, or --manifest")
+        if args.recursive:
+            parser.error("--recursive requires --dir")
+        if args.path is None or args.variable is None:
+            parser.error("PATH and VARIABLE are required in legacy mode")
+        variable = args.variable
+
+    if not _VARIABLE_RE.match(variable):
         print(
-            f"do2screen: error: invalid variable name: {args.variable!r}",
+            f"do2screen: error: invalid variable name: {variable!r}",
             file=sys.stderr,
         )
         return 2
-    if not os.path.exists(args.path):
-        print(f"do2screen: error: path does not exist: {args.path}", file=sys.stderr)
-        return 1
-    if not os.path.isfile(args.path):
-        print(f"do2screen: error: not a file: {args.path}", file=sys.stderr)
-        return 1
 
     try:
-        result = trace(
-            args.path,
-            args.variable,
-            follow_parents=not args.no_follow_parents,
-            include_labels=args.labels,
-        )
+        if project_mode:
+            if args.directory is not None:
+                result = trace_directory(
+                    args.directory,
+                    variable,
+                    recursive=args.recursive,
+                    follow_parents=not args.no_follow_parents,
+                    include_labels=args.labels,
+                )
+            elif args.files is not None:
+                result = trace_files(
+                    args.files,
+                    variable,
+                    follow_parents=not args.no_follow_parents,
+                    include_labels=args.labels,
+                )
+            else:
+                assert args.manifest is not None
+                result = trace_manifest(
+                    args.manifest,
+                    variable,
+                    follow_parents=not args.no_follow_parents,
+                    include_labels=args.labels,
+                )
+            if not result.sources:
+                for diagnostic in result.project_diagnostics:
+                    print(
+                        f"do2screen: error: {diagnostic.message or diagnostic.code}",
+                        file=sys.stderr,
+                    )
+                return 1
+        else:
+            assert args.path is not None
+            if not os.path.exists(args.path):
+                print(f"do2screen: error: path does not exist: {args.path}", file=sys.stderr)
+                return 1
+            if not os.path.isfile(args.path):
+                print(f"do2screen: error: not a file: {args.path}", file=sys.stderr)
+                return 1
+            result = trace(
+                args.path,
+                variable,
+                follow_parents=not args.no_follow_parents,
+                include_labels=args.labels,
+            )
     except RegistryIncompatibilityError as exc:
         print(f"do2screen: error: registry incompatibility: {exc}", file=sys.stderr)
         return 1
     except OSError as exc:
         print(f"do2screen: error: {exc}", file=sys.stderr)
         return 1
+    except ValueError as exc:
+        print(f"do2screen: error: {exc}", file=sys.stderr)
+        return 2
 
     indent = max(0, args.indent)
     payload = json.loads(result.model_dump_json())
