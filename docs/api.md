@@ -82,6 +82,24 @@ directory discovery is deterministic but unordered.
 
 ---
 
+### VariableEffect
+
+::: do2screen.models.VariableEffect
+
+---
+
+### ProvenanceStatement
+
+::: do2screen.models.ProvenanceStatement
+
+---
+
+### VariableProvenanceChunk
+
+::: do2screen.models.VariableProvenanceChunk
+
+---
+
 ## Exceptions
 
 ### RegistryIncompatibilityError

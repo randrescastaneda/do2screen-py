@@ -36,8 +36,8 @@ label variable total_income "Total household income"
     ```python
     from do2screen import trace
 
-    result = trace("tests/fixtures/sample.do", "income")
-    print(result.model_dump_json(indent=2))
+        result = trace("tests/fixtures/sample.do", "income")
+        print(result.model_dump_json(indent=2))
     ```
 
 **Result:**
@@ -47,6 +47,19 @@ label variable total_income "Total household income"
 - `coverage`: 1.0 -- every executable line is attributed to some variable
 - The rename on line 5 appears in the audit inventory as an `income` reference and
   a `total_income` creation. Trace `total_income` to follow the renamed variable.
+- `provenance_chunk` contains the selected target and ancestor lifecycle as one
+  marked, contiguous source block. It is an audit slice, not a standalone
+  executable Stata program.
+
+To render the same slice as Markdown:
+
+```sh
+do2screen tests/fixtures/sample.do income --format markdown
+```
+
+The Markdown document includes the execution-order assessment, resolved lineage
+code, and a separate potential-replication-context section for unresolved parser
+blocks and project diagnostics.
 
 ---
 
@@ -403,6 +416,13 @@ is deterministic but unordered, so ambiguous cross-file ancestry is omitted and
 reported as a `cross_file_unordered` item in `result.project_diagnostics`.
 Missing inputs may also appear there on a successful partial result. A project
 with no readable roots exits with code `1` and writes no success JSON.
+
+For explicit files and manifests, `result.provenance_chunk.ordering` is
+`"execution"`; repeated includes are represented by repeated statements with
+distinct `occurrence_sequence` values. Directory results use `"per_source"` and
+the Markdown output explicitly warns that no global execution sequence is known.
+Lineage variables that have no resolved lifecycle range appear in
+`lineage_variables_without_ranges` rather than being presented as complete.
 
 Project tracing requires an installed, conformant `stata-registry>=0.4.0`
 source-driver capability because include drivers must come from the upstream

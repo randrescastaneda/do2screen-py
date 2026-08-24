@@ -3,7 +3,7 @@
 Trace how a variable is built inside a Stata do file.
 
 `do2screen-py` (PyPI distribution name; import name `do2screen`) is a Python
-3.10+ library and JSON CLI that, given a do file path and a variable name,
+3.10+ library and JSON/Markdown CLI that, given a do file path and a variable name,
 returns the physical source lines for the variable's create, modify, drop, and
 label lifecycle events, plus the ancestor variables it depends on, recursively.
 Label events are opt-in. It is a Python reimplementation of the tracing logic
@@ -49,7 +49,7 @@ pip install -e ".[registry]"             # latest upstream registry from GitHub 
 ## Command line
 
 ```sh
-do2screen PATH VARIABLE [--no-follow-parents] [--labels] [--indent N]
+do2screen PATH VARIABLE [--no-follow-parents] [--labels] [--format {json,markdown}] [--indent N]
 ```
 
 Project tracing uses one of these exact forms:
@@ -64,7 +64,8 @@ Directory discovery is deterministic but unordered. Explicit file lists and
 manifest entries define execution order. Project diagnostics such as missing
 inputs and `cross_file_unordered` are included in successful JSON results.
 
-Writes exactly one `TraceResult` JSON document to stdout on success. Exit codes:
+Writes exactly one `TraceResult` JSON document to stdout on success by default.
+Use `--format markdown` for a human-auditable provenance document. Exit codes:
 `0` for a legacy result or a complete/partial project result, `1` for an
 unreadable legacy input, project registry incompatibility, or a project with no
 readable roots, and `2` for invalid invocation or manifest schema. Successful
@@ -74,6 +75,7 @@ stderr.
 ```sh
 do2screen data/clean.do income             # replace with your do-file path
 do2screen data/clean.do income --no-follow-parents --indent 4
+do2screen data/clean.do income --format markdown
 ```
 
 ## API
@@ -115,6 +117,19 @@ performs no network calls, randomness, or environment-dependent lookups.
   project metadata, defaulted for legacy results.
 - `project_diagnostics` — non-terminal project uncertainty and input facts;
   these are separate from terminal `unresolved_blocks`.
+- `provenance_chunk` — one target-focused, human-auditable lineage slice. It
+  contains `lineage_variables`, selected lifecycle `statements`, marked source
+  `text`, and explicit `lineage_variables_without_ranges`. It also copies every
+  `unresolved_blocks` and `project_diagnostics` record into potential replication
+  context. The chunk is an audit slice, not a standalone executable Stata
+  program; dataset loading, macros, control flow, restructuring, and user-written
+  commands may still be required.
+
+`provenance_chunk.ordering` is `execution` for `trace()`, explicit file lists,
+and manifests. Repeated include occurrences receive distinct
+`occurrence_sequence` values. Directory discovery uses `per_source` ordering and
+explicitly warns that no global execution sequence is known; lexical discovery
+order is never presented as execution order.
 
 Manifest V1 is exactly `{"version": 1, "files": ["relative/path.do"]}`.
 Unknown top-level keys, non-integer versions, non-string entries, empty arrays,
@@ -122,6 +137,17 @@ and unsupported versions are rejected. Relative entries resolve from the
 manifest directory, canonical duplicates keep their first occurrence, and
 include occurrences are replayed at their call sites without reparsing the
 physical source.
+
+### Markdown output
+
+Markdown output contains `# Variable provenance: TARGET`, the standalone
+execution disclaimer, lineage names, the ordering assessment, and one contiguous
+fenced `stata` block under `## Resolved lineage code`. The
+`## Potential replication context` section lists every unresolved block with its
+reason, range, context, statement, and source lines, followed by every project
+diagnostic. If no selected lifecycle statement exists, the section says so
+explicitly. Structured `provenance_chunk.statements` is the source of truth for
+renderers; `text` is the deterministic display form.
 
 ## Registry boundary
 

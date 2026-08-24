@@ -25,6 +25,7 @@ The top-level result of tracing one variable through one source graph.
 | `variable_identities` | `list[VariableIdentity]` | Occurrence-qualified definition contexts |
 | `manifest_path` | `str \| None` | Canonical manifest path for manifest input |
 | `project_diagnostics` | `list[ProjectDiagnostic]` | Non-terminal project uncertainty and input facts |
+| `provenance_chunk` | `VariableProvenanceChunk \| None` | Target-focused auditable lineage slice; defaulted for old persisted JSON |
 
 ---
 
@@ -142,6 +143,38 @@ All added `TraceResult` project fields are defaulted, so legacy JSON without
 them remains valid. Legacy `trace()` results use `input_mode: null`, an empty
 `project_files` list, no variable identities, no manifest path, and an empty
 `project_diagnostics` list.
+
+## VariableProvenanceChunk
+
+The chunk is one human-auditable lineage slice for the requested target. It is
+not a standalone executable Stata program: dataset loading, macros, control
+flow, restructuring, and user-written commands may still be required.
+
+| Field | Type | Description |
+|---|---|---|
+| `variable` | `str` | Requested target variable |
+| `lineage_variables` | `list[str]` | Target followed by resolved ancestors in deterministic order |
+| `ordering` | `"execution" \| "per_source"` | Whether statements have an execution sequence or only source-local order |
+| `statements` | `list[ProvenanceStatement]` | Selected lifecycle statements, one per physical execution occurrence |
+| `text` | `str` | Deterministic marked Stata source block for display |
+| `lineage_variables_without_ranges` | `list[str]` | Selected lineage variables without a resolved lifecycle statement |
+| `standalone_execution` | `"not_assessed"` | Explicitly records that executable completeness is not assessed |
+| `unresolved_blocks` | `list[UnresolvedBlock]` | All parser uncertainty records from the traversed result |
+| `project_diagnostics` | `list[ProjectDiagnostic]` | All project uncertainty and input facts from the traversed result |
+
+`ProvenanceStatement` contains a `range`, one or more `VariableEffect` records,
+and an optional `occurrence_sequence`. Effects are limited to `created`,
+`modified`, `dropped`, and `labelled`; dependency-only `referenced` records are
+never emitted as statements. A physical statement with multiple selected effects
+appears once with all effects preserved. `text` marks each group with a Stata
+comment such as `* [file.do:38 | wages:created | occurrence:1]` and joins groups
+with one blank line while preserving `LineRange.source_lines` exactly.
+
+For `trace()`, explicit file lists, and manifests, statements are selected from
+the call-site execution stream. Repeated includes therefore repeat source
+statements with distinct occurrence values. Directory chunks use `per_source`
+ordering, retain deterministic source-local line order, and explicitly state
+that no global execution sequence is known.
 
 For ordered project inputs, definitions are occurrence-qualified and references
 bind to the latest active preceding definition. A drop deactivates that
