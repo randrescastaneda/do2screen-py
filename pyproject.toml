@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=68"]
+requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -8,16 +8,24 @@ version = "0.1.0"
 description = "Trace how a variable is built inside a Stata do file."
 readme = "README.md"
 requires-python = ">=3.10"
-license = { file = "LICENSE" }
-keywords = ["stata", "do-file", "trace", "audit"]
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [
+    { name = "R. Andres Castaneda", email = "acastanedaa@worldbank.org" },
+]
+keywords = ["stata", "do-file", "trace", "lineage", "provenance", "audit"]
 classifiers = [
     "Development Status :: 3 - Alpha",
+    "Environment :: Console",
     "Intended Audience :: Science/Research",
+    "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
+    "Typing :: Typed",
     "Topic :: Scientific/Engineering",
 ]
 dependencies = [
@@ -25,17 +33,18 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-# Track the upstream repository tip when this optional extra is installed or
-# upgraded. The base package remains usable without the registry dependency.
-registry = [
-    "stata-registry @ git+https://github.com/randrescastaneda/stata-command-registry.git@main",
-]
-test = ["pytest"]
-dev = ["pytest", "build"]
+test = ["pytest>=8"]
+dev = ["build>=1.2", "pytest>=8", "ruff>=0.11", "twine>=6"]
 docs = [
     "mkdocs-material>=9.5",
     "mkdocstrings[python]>=0.25",
 ]
+
+[project.urls]
+Homepage = "https://github.com/randrescastaneda/do2screen-py"
+Documentation = "https://randrescastaneda.github.io/do2screen-py/"
+Issues = "https://github.com/randrescastaneda/do2screen-py/issues"
+Source = "https://github.com/randrescastaneda/do2screen-py"
 
 [project.scripts]
 do2screen = "do2screen.cli:main"
@@ -55,3 +64,10 @@ addopts = "-ra"
 
 [tool.ruff]
 line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP"]
+
+[tool.ruff.format]
+docstring-code-format = true

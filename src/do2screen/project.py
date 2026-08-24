@@ -12,8 +12,8 @@ from __future__ import annotations
 import errno
 import json
 import os
+from collections.abc import Iterable
 from dataclasses import dataclass, field
-from typing import Iterable
 
 from do2screen.ingest import IngestionSpec
 from do2screen.models import (

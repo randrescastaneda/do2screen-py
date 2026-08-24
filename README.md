@@ -16,35 +16,32 @@ data values.
 
 ## Installation
 
-There is not currently a PyPI release. Install the current package from a
-repository checkout:
+Install the published package from PyPI:
 
 ```sh
-git clone https://github.com/randrescastaneda/do2screen-py.git
-cd do2screen-py
-pip install .
+python -m pip install do2screen-py
 ```
 
-The package installs and runs without `stata-command-registry`. Optional extras
-are installed from the checkout:
+The package installs and runs without `stata-command-registry`. To develop from
+a checkout:
 
 ```sh
 pip install -e ".[test]"                 # pytest
-pip install -e ".[dev]"                  # build + pytest
+pip install -e ".[dev]"                  # build, pytest, Ruff, and Twine
 pip install -e ".[docs]"                 # MkDocs website dependencies
-pip install -e ".[registry]"             # latest upstream registry from GitHub main
 ```
 
-> **Note on the `[registry]` extra**: it installs the latest available commit on
-> `main` from the upstream `stata-command-registry` repository at install time.
-> Run `pip install --upgrade --no-cache-dir -e ".[registry]"` from the checkout
-> to refresh an existing environment. The base install remains usable without the registry;
-> commands that cannot be resolved are classified as `unknown_command` unresolved
-> blocks rather than being dropped. Legacy single-file tracing therefore remains
-> available without the registry, although command attribution is limited.
-> Project APIs require a conformant `stata-registry>=0.4.0` source-driver
-> capability and fail explicitly when it is unavailable. The extra is one way to
-> install that dependency; an otherwise compatible installation also works.
+Until `stata-registry` is available on PyPI, install it separately from its
+source repository when full command attribution or project tracing is needed:
+
+```sh
+python -m pip install "stata-registry @ git+https://github.com/randrescastaneda/stata-command-registry.git@main"
+```
+
+The base install remains usable without the registry; commands that cannot be
+resolved are classified as `unknown_command` unresolved blocks rather than
+being dropped. Project APIs require a conformant `stata-registry>=0.4.0`
+source-driver capability and fail explicitly when it is unavailable.
 
 ## Command line
 
@@ -153,8 +150,7 @@ renderers; `text` is the deterministic display form.
 
 Command vocabulary comes from the upstream `stata-command-registry` repository
 (installed distribution name `stata-registry`, import name `stata_registry`).
-The optional `[registry]` extra tracks `main` and resolves its latest available
-commit when installed or upgraded. The registry answers *what a word is*
+The registry answers *what a word is*
 (command, prefix, variable effect, include driver); this package answers *what
 the shape of the text is*. Legacy single-file tracing can run without the
 registry and reports each unresolved command as an `unknown_command` block.
@@ -181,9 +177,11 @@ silently dropped.
 ## Development
 
 ```sh
-uv pip install -e ".[dev]"   # (or pip)
+python -m pip install -e ".[dev]"
+ruff check .
 pytest
 python -m build
+python -m twine check --strict dist/*
 ```
 
 See `.cg-docs/plans/2026-08-21-project-wide-tracing-with-source-lines.md` for the
@@ -196,3 +194,35 @@ Build the documentation website locally with:
 uv pip install -e ".[docs]"
 mkdocs build --strict
 ```
+
+## Release workflow
+
+Build and inspect both distribution formats from a clean checkout:
+
+```sh
+rm -rf build dist src/*.egg-info
+python -m build
+python -m twine check --strict dist/*
+```
+
+Test the release on TestPyPI before publishing it to PyPI:
+
+```sh
+python -m twine upload --repository testpypi dist/*
+python -m venv /tmp/do2screen-testpypi
+/tmp/do2screen-testpypi/bin/python -m pip install \
+  --index-url https://test.pypi.org/simple/ \
+  --extra-index-url https://pypi.org/simple/ do2screen-py==0.1.0
+/tmp/do2screen-testpypi/bin/do2screen --help
+```
+
+For a manual production upload, use an API token rather than a password:
+
+```sh
+python -m twine upload dist/*
+```
+
+The preferred production path is the GitHub Actions release workflow. Configure
+the `pypi` GitHub environment as a Trusted Publisher on PyPI, then push a tag
+matching `pyproject.toml`, such as `v0.1.0`. The workflow validates, publishes,
+and creates the GitHub release with the wheel and source distribution attached.

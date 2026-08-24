@@ -184,7 +184,7 @@ def test_repeated_explicit_root_occurrences_reuse_one_physical_parse(tmp_path, m
 def test_directory_include_outside_root_is_not_traversed(tmp_path):
     outside = tmp_path.parent / "outside_project.do"
     write_source(tmp_path.parent, outside.name, "gen secret = 1\n")
-    root = write_source(tmp_path, "main.do", f'include "../{outside.name}"\n')
+    write_source(tmp_path, "main.do", f'include "../{outside.name}"\n')
 
     result = project_trace(directory_spec(tmp_path), "secret")
 
@@ -215,7 +215,10 @@ def test_project_graph_records_real_source_lines_for_every_terminal_range(tmp_pa
     for attribution in project.attributions:
         line_range = attribution.range
         assert len(line_range.source_lines) == line_range.end_line - line_range.start_line + 1
-        assert line_range.source_lines == [expected[line] for line in range(line_range.start_line, line_range.end_line + 1)]
+        assert line_range.source_lines == [
+            expected[line]
+            for line in range(line_range.start_line, line_range.end_line + 1)
+        ]
     for block in project.unresolved:
         line_range = block.range
         assert len(line_range.source_lines) == line_range.end_line - line_range.start_line + 1
@@ -227,7 +230,7 @@ def test_project_graph_records_real_source_lines_for_every_terminal_range(tmp_pa
 
 
 def test_unordered_reference_after_drop_is_reported(tmp_path):
-    source = write_source(
+    write_source(
         tmp_path,
         "drop_then_use.do",
         "gen base = 1\ndrop base\ngen x = base + 1\n",

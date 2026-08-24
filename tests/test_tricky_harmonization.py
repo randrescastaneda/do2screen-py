@@ -569,7 +569,7 @@ class TestGlobalInvariants:
         assert self.graph.files, "parser produced no source records"
         from do2screen.trace import coverage_of
         cov = coverage_of(self.graph)
-        assert cov > 0, f"Coverage is zero, expected some attributed lines"
+        assert cov > 0, "Coverage is zero, expected some attributed lines"
         assert cov < 1.0, "Coverage should be < 1.0 due to unknown commands"
 
     def test_no_dropped_lines_fixture_specific(self):

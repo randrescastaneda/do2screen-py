@@ -9,8 +9,8 @@ reason when the registry is absent.
 
 from __future__ import annotations
 
-import importlib.util
 import importlib.metadata
+import importlib.util
 
 import pytest
 

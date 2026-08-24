@@ -22,8 +22,8 @@ import os
 import re
 import sys
 
-from do2screen.registry import RegistryIncompatibilityError
 from do2screen.provenance import render_markdown
+from do2screen.registry import RegistryIncompatibilityError
 from do2screen.trace import trace, trace_directory, trace_files, trace_manifest
 
 #: Rejects variable arguments that cannot name a Stata variable.

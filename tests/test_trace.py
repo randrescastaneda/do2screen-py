@@ -2,11 +2,10 @@
 
 from __future__ import annotations
 
-from tests.conftest import trace_text, write_do
-
 import pytest
 
 from do2screen.trace import trace_files
+from tests.conftest import trace_text, write_do
 
 
 def test_simple_lineage(tmp_path):
@@ -252,7 +251,9 @@ def test_source_lines_preserve_semicolon_multiline_range(tmp_path):
     assert modified.range.start_line == 2
     assert modified.range.end_line == 3
     assert modified.range.source_lines == ["replace x = 1 +", "  2;"]
-    statement = next(item for item in result.provenance_chunk.statements if item.range.start_line == 2)
+    statement = next(
+        item for item in result.provenance_chunk.statements if item.range.start_line == 2
+    )
     assert statement.range.source_lines == ["replace x = 1 +", "  2;"]
     assert "2;" in result.provenance_chunk.text
 

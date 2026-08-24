@@ -564,5 +564,6 @@ that result as evidence that the variable is absent.
 
 Project tracing requires an installed, conformant `stata-registry>=0.4.0`
 source-driver capability because include drivers must come from the upstream
-registry. The optional `[registry]` extra is one way to install it. The package
-does not execute Stata or make network calls while tracing.
+registry. Until it is published on PyPI, install it separately from the
+`stata-command-registry` source repository. The package does not execute Stata
+or make network calls while tracing.

@@ -1,16 +1,18 @@
-"""Tests for the upstream registry dependency source."""
+"""Tests for publishable dependency metadata."""
 
 from __future__ import annotations
 
-import tomllib
 from pathlib import Path
 
+import tomllib
 
-def test_registry_extra_tracks_upstream_main() -> None:
+
+def test_dependency_metadata_has_no_direct_urls() -> None:
     pyproject = Path(__file__).parents[1] / "pyproject.toml"
     data = tomllib.loads(pyproject.read_text(encoding="utf-8"))
-    requirements = data["project"]["optional-dependencies"]["registry"]
+    project = data["project"]
+    requirements = list(project["dependencies"])
+    for extra in project["optional-dependencies"].values():
+        requirements.extend(extra)
 
-    assert requirements == [
-        "stata-registry @ git+https://github.com/randrescastaneda/stata-command-registry.git@main",
-    ]
+    assert all(" @ " not in requirement for requirement in requirements)

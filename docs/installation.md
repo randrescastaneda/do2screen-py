@@ -9,36 +9,37 @@ The legacy single-file API and CLI can run without the optional registry, but
 commands then remain unresolved. Project tracing requires an installed,
 conformant `stata-registry>=0.4.0` source-driver capability.
 
-## Install from source
+## Install from PyPI
 
-There is not currently a PyPI release. Install the current package from a
-repository checkout:
+```sh
+python -m pip install do2screen-py
+```
+
+## Install from source
 
 ```sh
 git clone https://github.com/randrescastaneda/do2screen-py.git
 cd do2screen-py
-pip install .
+python -m pip install .
 ```
 
 ## Optional extras
 
 ```sh
 pip install -e ".[test]"                # pytest
-pip install -e ".[dev]"                 # build + pytest
+pip install -e ".[dev]"                 # build, pytest, Ruff, and Twine
 pip install -e ".[docs]"                # mkdocs-material + mkdocstrings
-pip install -e ".[registry]"             # latest upstream registry from GitHub main
 ```
 
-!!! note "About the `[registry]` extra"
-    The `[registry]` extra installs the latest available commit on `main` from
-    the upstream `stata-command-registry` repository at install time. Refresh an
-    existing environment with `pip install --upgrade --no-cache-dir -e
-    ".[registry]"` from the repository checkout. The base install remains usable without the
+!!! note "About `stata-registry`"
+    Until `stata-registry` is published on PyPI, install it separately with
+    `python -m pip install "stata-registry @
+    git+https://github.com/randrescastaneda/stata-command-registry.git@main"`.
+    The base install remains usable without the
     registry; commands that cannot be resolved are classified as `unknown_command`
     unresolved blocks rather than being dropped. Project APIs require a
     conformant `stata-registry>=0.4.0` source-driver capability and fail
-    explicitly when it is unavailable. The extra is one installation route; any
-    compatible installation satisfies the requirement.
+    explicitly when it is unavailable.
 
 ## CLI Quickstart
 
@@ -195,11 +196,13 @@ git clone https://github.com/randrescastaneda/do2screen-py.git
 cd do2screen-py
 
 # Install with all dev dependencies
-uv pip install -e ".[dev]"
+python -m pip install -e ".[dev]"
 
-# Run the test suite
+# Run quality checks and the test suite
+ruff check .
 pytest
 
-# Build a distribution
+# Build and validate both distributions
 python -m build
+python -m twine check --strict dist/*
 ```

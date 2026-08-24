@@ -7,12 +7,13 @@ does not classify Stata commands or infer execution semantics.
 from __future__ import annotations
 
 import json
+from collections.abc import Iterable
 from dataclasses import dataclass
-from typing import Iterable, cast
+from typing import cast
 
 from do2screen.models import (
-    LineRange,
     LifecycleKind,
+    LineRange,
     ProjectDiagnostic,
     ProvenanceOrdering,
     ProvenanceStatement,
