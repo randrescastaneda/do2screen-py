@@ -5,34 +5,45 @@
 - Python 3.10 or later
 - pydantic v2 (installed automatically)
 
-## Install from PyPI
+The legacy single-file API and CLI can run without the optional registry, but
+commands then remain unresolved. Project tracing requires an installed,
+conformant `stata-registry>=0.4.0` source-driver capability.
+
+## Install from source
+
+There is not currently a PyPI release. Install the current package from a
+repository checkout:
 
 ```sh
-pip install do2screen-py
+git clone https://github.com/randrescastaneda/do2screen-py.git
+cd do2screen-py
+pip install .
 ```
 
 ## Optional extras
 
 ```sh
-pip install "do2screen-py[test]"       # pytest
-pip install "do2screen-py[dev]"        # build + pytest
-pip install "do2screen-py[docs]"       # mkdocs-material + mkdocstrings
-pip install "do2screen-py[registry]"   # latest upstream registry from GitHub main
+pip install -e ".[test]"                # pytest
+pip install -e ".[dev]"                 # build + pytest
+pip install -e ".[docs]"                # mkdocs-material + mkdocstrings
+pip install -e ".[registry]"             # latest upstream registry from GitHub main
 ```
 
 !!! note "About the `[registry]` extra"
     The `[registry]` extra installs the latest available commit on `main` from
     the upstream `stata-command-registry` repository at install time. Refresh an
-    existing environment with `pip install --upgrade --no-cache-dir
-    "do2screen-py[registry]"`. The base install remains usable without the
+    existing environment with `pip install --upgrade --no-cache-dir -e
+    ".[registry]"` from the repository checkout. The base install remains usable without the
     registry; commands that cannot be resolved are classified as `unknown_command`
     unresolved blocks rather than being dropped. Project APIs require a
     conformant `stata-registry>=0.4.0` source-driver capability and fail
-    explicitly when it is unavailable.
+    explicitly when it is unavailable. The extra is one installation route; any
+    compatible installation satisfies the requirement.
 
 ## CLI Quickstart
 
-After installation, the `do2screen` command is available:
+After installation, the `do2screen` command is available. In the legacy form,
+`PATH` and `VARIABLE` are positional:
 
 ```sh
 do2screen PATH VARIABLE [--no-follow-parents] [--labels] [--indent N]
@@ -56,14 +67,16 @@ legacy positional form. `--recursive` is valid only with `--dir`.
 | `PATH` | Path to the Stata do file |
 | `VARIABLE` | Variable name to trace |
 | `--no-follow-parents` | Leave `ancestors` empty; still return the full audit inventory |
-| `--labels` | Include label lifecycle events in the traced ranges |
+| `--labels` | Include `label variable` events in the traced ranges (excluded by default) |
 | `--indent N` | JSON indentation level (default: 2) |
 
 **Examples:**
 
+The `data/clean.do` path below is a placeholder for one of your own Stata files.
+
 ```sh
 # Basic trace
-do2screen data/clean.do income
+do2screen data/clean.do income  # replace with your do-file path
 
 # Trace without ancestor resolution
 do2screen data/clean.do income --no-follow-parents
@@ -76,8 +89,8 @@ do2screen data/clean.do income --labels --indent 4
 
 | Code | Meaning |
 |---|---|
-| `0` | Complete or partial project result with one JSON document on stdout |
-| `1` | Unreadable legacy input, registry incompatibility, or no readable project roots |
+| `0` | Legacy result or complete/partial project result with one JSON document on stdout |
+| `1` | Unreadable legacy input, project registry incompatibility, or no readable project roots |
 | `2` | Invalid invocation or manifest schema |
 
 The CLI writes exactly one `TraceResult` JSON document to stdout on successful
@@ -157,9 +170,11 @@ trace_manifest(
 ```
 
 `trace_files` and `trace_manifest` use the supplied order as execution order.
-`trace_directory` sorts visible `.do` and `.ado` files deterministically but
-does not infer execution order; ambiguous cross-file lineage is reported by
-`cross_file_unordered` diagnostics.
+`trace_directory` discovers visible `.do` and `.ado` files in deterministic
+lexical order but does not infer execution order; ambiguous cross-file lineage is
+reported by `cross_file_unordered` diagnostics. Project APIs require the
+conformant registry capability described above because include drivers come from
+the upstream registry.
 
 Manifest V1 is exactly:
 
@@ -170,7 +185,8 @@ Manifest V1 is exactly:
 Unknown keys, non-integer versions, non-string entries, empty arrays, and
 unsupported versions are rejected. Relative entries are resolved from the
 manifest directory, absolute entries are canonicalized, and duplicate
-canonical paths keep their first occurrence.
+canonical paths keep their first occurrence. Include occurrences are replayed at
+their call sites without reparsing the physical source.
 
 ## Development Setup
 

@@ -4,10 +4,11 @@ Trace how a variable is built inside a Stata do file.
 
 `do2screen-py` (PyPI distribution name; import name `do2screen`) is a Python
 3.10+ library and JSON CLI that, given a do file path and a variable name,
-returns the physical source lines that create, modify, drop, or label that
-variable, plus the ancestor variables it depends on, recursively. It is a
-Python reimplementation of the tracing logic in **do2screen (Stata)**, by the
-same author, for environments where Stata cannot run.
+returns the physical source lines for the variable's create, modify, drop, and
+label lifecycle events, plus the ancestor variables it depends on, recursively.
+Label events are opt-in. It is a Python reimplementation of the tracing logic
+in **do2screen (Stata)**, by the same author, for environments where Stata
+cannot run.
 
 This is a **general purpose Stata tool**. It reads text and reports structure;
 it is not a Stata interpreter, does not execute code, and does not reason about
@@ -15,26 +16,35 @@ data values.
 
 ## Installation
 
+There is not currently a PyPI release. Install the current package from a
+repository checkout:
+
 ```sh
-pip install do2screen-py
+git clone https://github.com/randrescastaneda/do2screen-py.git
+cd do2screen-py
+pip install .
 ```
 
-The package installs and runs without `stata-command-registry`. Optional extras:
+The package installs and runs without `stata-command-registry`. Optional extras
+are installed from the checkout:
 
 ```sh
-pip install "do2screen-py[test]"       # pytest
-pip install "do2screen-py[dev]"        # build + pytest
-pip install "do2screen-py[registry]"   # latest upstream registry from GitHub main
+pip install -e ".[test]"                 # pytest
+pip install -e ".[dev]"                  # build + pytest
+pip install -e ".[docs]"                 # MkDocs website dependencies
+pip install -e ".[registry]"             # latest upstream registry from GitHub main
 ```
 
 > **Note on the `[registry]` extra**: it installs the latest available commit on
 > `main` from the upstream `stata-command-registry` repository at install time.
-> Run `pip install --upgrade --no-cache-dir "do2screen-py[registry]"` to refresh
-> an existing environment. The base install remains usable without the registry;
+> Run `pip install --upgrade --no-cache-dir -e ".[registry]"` from the checkout
+> to refresh an existing environment. The base install remains usable without the registry;
 > commands that cannot be resolved are classified as `unknown_command` unresolved
-> blocks rather than being dropped. Project APIs require a conformant
-> `stata-registry>=0.4.0` source-driver capability and fail explicitly when it is
-> unavailable.
+> blocks rather than being dropped. Legacy single-file tracing therefore remains
+> available without the registry, although command attribution is limited.
+> Project APIs require a conformant `stata-registry>=0.4.0` source-driver
+> capability and fail explicitly when it is unavailable. The extra is one way to
+> install that dependency; an otherwise compatible installation also works.
 
 ## Command line
 
@@ -55,13 +65,14 @@ manifest entries define execution order. Project diagnostics such as missing
 inputs and `cross_file_unordered` are included in successful JSON results.
 
 Writes exactly one `TraceResult` JSON document to stdout on success. Exit codes:
-`0` complete or partial project result, `1` unreadable legacy input, registry
-incompatibility, or no readable project roots, and `2` invalid invocation or
-manifest schema. Successful project diagnostics are JSON fields; human-readable
-failures and warnings go to stderr.
+`0` for a legacy result or a complete/partial project result, `1` for an
+unreadable legacy input, project registry incompatibility, or a project with no
+readable roots, and `2` for invalid invocation or manifest schema. Successful
+project diagnostics are JSON fields; human-readable failures and warnings go to
+stderr.
 
 ```sh
-do2screen data/clean.do income
+do2screen data/clean.do income             # replace with your do-file path
 do2screen data/clean.do income --no-follow-parents --indent 4
 ```
 
@@ -74,16 +85,18 @@ result = trace("data/clean.do", "income")
 result.model_dump()
 ```
 
-`trace(path, variable, follow_parents=True, include_labels=False)` returns a
-frozen Pydantic v2 `TraceResult`. The same input and installed registry revision
-always produce byte-identical output; installation or upgrade is the point at
-which the optional GitHub dependency is refreshed. Runtime tracing performs no
-network calls, randomness, or environment-dependent lookups.
+`trace(path, variable, *, follow_parents=True, include_labels=False)` returns a
+frozen Pydantic v2 `TraceResult`. Labels are excluded from `ranges` by default;
+set `include_labels=True` to include them. The same input and installed registry
+revision always produce byte-identical output; installation or upgrade is the
+point at which the optional GitHub dependency is refreshed. Runtime tracing
+performs no network calls, randomness, or environment-dependent lookups.
 
 ## What the result contains
 
 - `ranges` — lifecycle line ranges of the traced variable (created, modified,
-  dropped, labelled) across the root file and its includes.
+  and dropped by default; labelled when `include_labels=True`) across the root
+  file and its includes.
 - `ancestors` — recursively resolved dependency variables.
 - `attributed_ranges` — the complete audit inventory (lifecycle *and*
   dependency references) for all variables in all traversed sources.
@@ -91,9 +104,9 @@ network calls, randomness, or environment-dependent lookups.
   reported explicitly rather than dropped. Reasons: `macro_or_loop`,
   `unknown_command`, `unsupported_effect`, `unsupported_syntax`,
   `unresolved_include`, `no_variable_attribution`, `unterminated_structure`.
-- `coverage` — fraction of executable physical lines attributed to a variable
-  across all traversed sources (sentinel `1.0` when there are no executable
-  lines at all).
+- `coverage` — fraction of executable physical lines covered by at least one
+  attribution across all traversed sources (sentinel `1.0` when there are no
+  executable lines at all).
 - `sources` / `source` — provenance (path, line count, `#delimit` usage,
   traversal order) per traversed file.
 - `LineRange.source_lines` — inclusive decoded physical source lines without
@@ -117,9 +130,11 @@ Command vocabulary comes from the upstream `stata-command-registry` repository
 The optional `[registry]` extra tracks `main` and resolves its latest available
 commit when installed or upgraded. The registry answers *what a word is*
 (command, prefix, variable effect, include driver); this package answers *what
-the shape of the text is*. When the registry is absent, the package still parses
-and reports every statement, classifying commands it cannot resolve as unresolved
-blocks; nothing is silently dropped.
+the shape of the text is*. Legacy single-file tracing can run without the
+registry and reports each unresolved command as an `unknown_command` block.
+Project APIs additionally require the registry's conformant source-driver
+capability so include and nested-source traversal cannot be guessed. Nothing is
+silently dropped.
 
 ## Known limitations
 
@@ -148,3 +163,10 @@ python -m build
 See `.cg-docs/plans/2026-08-21-project-wide-tracing-with-source-lines.md` for the
 project-wide implementation plan and `AGENTS.md` for the hard invariants this
 package guarantees.
+
+Build the documentation website locally with:
+
+```sh
+uv pip install -e ".[docs]"
+mkdocs build --strict
+```

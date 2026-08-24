@@ -15,7 +15,7 @@ documented contract the registry must satisfy:
 
 The registry is deliberately an optional runtime dependency: constructing the
 adapter never fails, but calling registry-backed methods raises
-:class:`RegistryIncompatibilityError` when the package is absent or the API
+``RegistryIncompatibilityError`` when the package is absent or the API
 does not match the contract. The ``[registry]`` extra obtains the latest
 upstream repository revision at installation or upgrade time; runtime tracing
 does not access the network. This package must install and run all of its

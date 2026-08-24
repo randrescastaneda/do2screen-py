@@ -2,7 +2,7 @@
 
 The registry answers *what a word is* (command, prefix, effect). This module
 answers *what the shape of the text is*: where a statement starts and ends is
-already resolved by :mod:`do2screen.statements`; here we extract, from the
+already resolved by ``do2screen.statements``; here we extract, from the
 code-only text of a statement, which variable tokens are affected (targets)
 and which are input dependencies (sources), independent of the command name.
 

@@ -1,7 +1,8 @@
 # Output & Response Formats
 
-The `trace()` function and `do2screen` CLI both return a `TraceResult` -- a
-frozen Pydantic v2 model that serialises to JSON without data loss.
+The Python API returns a frozen Pydantic v2 `TraceResult`. The `do2screen` CLI
+serialises the same model as one JSON document on stdout and communicates the
+outcome through its exit code.
 
 ---
 
@@ -18,7 +19,7 @@ The top-level result of tracing one variable through one source graph.
 | `unresolved_blocks` | `list[UnresolvedBlock]` | Regions that could not be attributed |
 | `coverage` | `float` | Fraction of executable lines covered by at least one attribution |
 | `sources` | `list[SourceProvenance]` | Provenance of every traversed source, in traversal order |
-| `source` | `SourceProvenance` | Provenance of the root/target source |
+| `source` | `SourceProvenance` | Provenance of the root source (the first requested source in project mode) |
 | `input_mode` | `"files" \| "directory" \| "manifest" \| None` | Project input mode; `None` for legacy `trace()` |
 | `project_files` | `list[str]` | Canonical accepted inputs and sources reached by includes |
 | `variable_identities` | `list[VariableIdentity]` | Occurrence-qualified definition contexts |
@@ -63,7 +64,7 @@ One attributed executable statement tied to one variable.
 
 ### Kind
 
-The lifecycle effect of an attributed range:
+The kind of attribution recorded for a range:
 
 | Value | Meaning |
 |---|---|
@@ -71,7 +72,7 @@ The lifecycle effect of an attributed range:
 | `modified` | The variable is modified in place (e.g. `replace x = ...`) |
 | `dropped` | The variable is removed (e.g. `drop x`) |
 | `labelled` | The variable receives a label (e.g. `label variable x "..."`) |
-| `referenced` | The variable is referenced in an expression but not affected |
+| `referenced` | The variable is referenced in an expression but not affected; this is a dependency attribution, not a lifecycle event |
 
 ---
 
@@ -110,7 +111,7 @@ silently dropped.
 | `unsupported_syntax` | The command is known but the specific syntax variant is not handled |
 | `unresolved_include` | An `include` directive's target path could not be resolved |
 | `no_variable_attribution` | The statement is syntactically valid but cannot be tied to a variable |
-| `unterminated_structure` | An `if`/`foreach`/`while` block is not closed before end of file |
+| `unterminated_structure` | A brace structure or block comment is not closed before end of file |
 
 ---
 
@@ -123,7 +124,7 @@ Provenance metadata for one traversed source file.
 | `path` | `str` | Normalized filesystem path |
 | `line_count` | `int` | Number of physical lines |
 | `used_delimit` | `bool` | True when the source uses `#delimit ;` anywhere |
-| `traversal_index` | `int` | Ordered index in depth-first traversal (0 = root) |
+| `traversal_index` | `int` | Ordered index of first physical-source registration (0 = first registered source) |
 
 ## Project Metadata
 
@@ -172,7 +173,12 @@ Key details:
 
 ---
 
-## Full Annotated JSON Example
+## Representative JSON Example
+
+The following legacy result shows the contract and representative audit records;
+additional `attributed_ranges` records, including dependency references, may be
+present in a real result. `source_lines` is included on every displayed
+`LineRange`.
 
 ```json
 {
@@ -183,28 +189,57 @@ Key details:
       "start_line": 42,
       "end_line": 42,
       "comment_start_line": 40,
-      "comment_end_line": 41
+      "comment_end_line": 41,
+      "source_lines": ["gen income = wages + transfers"]
     }
   ],
   "ancestors": ["wages", "transfers"],
   "attributed_ranges": [
     {
-      "range": { "source": "data/clean.do", "start_line": 38, "end_line": 38 },
+      "range": {
+        "source": "data/clean.do",
+        "start_line": 38,
+        "end_line": 38,
+        "comment_start_line": null,
+        "comment_end_line": null,
+        "source_lines": ["gen wages = 1200"]
+      },
       "variable": "wages",
       "kind": "created"
     },
     {
-      "range": { "source": "data/clean.do", "start_line": 39, "end_line": 39 },
+      "range": {
+        "source": "data/clean.do",
+        "start_line": 39,
+        "end_line": 39,
+        "comment_start_line": null,
+        "comment_end_line": null,
+        "source_lines": ["gen transfers = 300"]
+      },
       "variable": "transfers",
       "kind": "created"
     },
     {
-      "range": { "source": "data/clean.do", "start_line": 42, "end_line": 42 },
+      "range": {
+        "source": "data/clean.do",
+        "start_line": 42,
+        "end_line": 42,
+        "comment_start_line": null,
+        "comment_end_line": null,
+        "source_lines": ["gen income = wages + transfers"]
+      },
       "variable": "income",
       "kind": "created"
     },
     {
-      "range": { "source": "data/clean.do", "start_line": 45, "end_line": 45 },
+      "range": {
+        "source": "data/clean.do",
+        "start_line": 45,
+        "end_line": 45,
+        "comment_start_line": null,
+        "comment_end_line": null,
+        "source_lines": ["replace income = income * 1.05"]
+      },
       "variable": "income",
       "kind": "modified"
     }
@@ -224,7 +259,12 @@ Key details:
     "line_count": 60,
     "used_delimit": false,
     "traversal_index": 0
-  }
+  },
+  "input_mode": null,
+  "project_files": [],
+  "variable_identities": [],
+  "manifest_path": null,
+  "project_diagnostics": []
 }
 ```
 

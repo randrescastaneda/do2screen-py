@@ -94,7 +94,7 @@ def build_result(
     *,
     follow_parents: bool,
 ) -> TraceResult:
-    """Project a parsed graph onto a :class:`TraceResult` for one variable."""
+    """Project a parsed graph onto a ``TraceResult`` for one variable."""
     target_lifecycle = graph.lifecycle.get(variable, [])
     if follow_parents:
         ancestors = _resolve_ancestors(variable, graph.parents)
@@ -142,9 +142,14 @@ def trace(
             target and ancestor traces.
 
     Returns:
-        A frozen, JSON-lossless :class:`TraceResult`. The output depends only
+        A frozen, JSON-lossless ``TraceResult``. The output depends only
         on the input file and the registry version -- no network, randomness,
         or environment-dependent behaviour.
+
+    Example:
+        ``trace("data/clean.do", "income", include_labels=True)`` returns a
+        ``TraceResult`` whose ``ranges`` contain the physical source
+        lines for ``income``.
     """
     registry = RegistryAdapter()
     parser = Parser(registry, include_labels=include_labels)
@@ -164,6 +169,24 @@ def trace_files(
 
     Duplicate paths are retained as separate root occurrences so execution
     order remains observable; each physical source is still parsed once.
+
+    Args:
+        files: Non-empty list or tuple of source paths. The supplied order is
+            the execution order for project lineage.
+        variable: Variable name to trace.
+        follow_parents: When False, leave ``ancestors`` empty while retaining
+            the target's ranges and the global audit inventory.
+        include_labels: When True, include label lifecycle events in the
+            target and ancestor traces.
+
+    Returns:
+        A project ``TraceResult`` with ``input_mode="files"``.
+
+    Raises:
+        ValueError: If ``files`` is empty or contains an invalid path-like
+            value.
+        RegistryIncompatibilityError: If the installed registry cannot provide
+            the source-driver capability required by project tracing.
     """
     from do2screen.project import trace_project
 
@@ -188,6 +211,24 @@ def trace_directory(
     Discovery is deterministic but semantically unordered. Cross-file lineage
     is therefore omitted when no explicit occurrence order exists and is
     reported in ``project_diagnostics``.
+
+    Args:
+        directory: Directory containing the project source files.
+        variable: Variable name to trace.
+        recursive: When True, discover files in nested visible directories.
+        follow_parents: When False, leave ``ancestors`` empty while retaining
+            the target's ranges and the global audit inventory.
+        include_labels: When True, include label lifecycle events in the
+            target and ancestor traces.
+
+    Returns:
+        A project ``TraceResult`` with ``input_mode="directory"``. Missing
+        inputs and unordered cross-file references are reported in
+        ``project_diagnostics``.
+
+    Raises:
+        RegistryIncompatibilityError: If the installed registry cannot provide
+            the source-driver capability required by project tracing.
     """
     from do2screen.project import trace_project
 
@@ -209,6 +250,24 @@ def trace_manifest(
     """Trace *variable* through the ordered files in a manifest V1 document.
 
     Manifest V1 accepts exactly ``{"version": 1, "files": [strings]}``.
+
+    Args:
+        manifest_path: Path to a Manifest V1 JSON document.
+        variable: Variable name to trace.
+        follow_parents: When False, leave ``ancestors`` empty while retaining
+            the target's ranges and the global audit inventory.
+        include_labels: When True, include label lifecycle events in the
+            target and ancestor traces.
+
+    Returns:
+        A project ``TraceResult`` with ``input_mode="manifest"`` and the
+        canonical ``manifest_path``.
+
+    Raises:
+        ValueError: If the manifest cannot be read or does not match the
+            Manifest V1 schema.
+        RegistryIncompatibilityError: If the installed registry cannot provide
+            the source-driver capability required by project tracing.
     """
     from do2screen.project import trace_project
 

@@ -8,6 +8,10 @@ Auto-generated from source docstrings.
 
 ::: do2screen.trace.trace
 
+## CLI
+
+::: do2screen.cli.main
+
 ## Project Tracing
 
 The three project functions return the same `TraceResult` contract as `trace()`.

@@ -1,8 +1,10 @@
 # Examples
 
-All examples use the test fixtures shipped with the package. The Stata code is
-real and intentionally unpolished -- real harmonization scripts are messier than
-toy examples, and the messiness is what the parser must handle.
+Examples use test fixtures from the repository checkout. The fixtures are not
+included in the installed distribution, so run these commands from a checkout
+or replace the paths with your own Stata files. The Stata code is synthetic and
+intentionally unpolished: it exercises parser behavior without containing any
+confidential data.
 
 ---
 
@@ -216,8 +218,9 @@ replace rank = rank + 1
 
 - `ranges`: line 3 (`gen rank = 1` with `bysort` prefix), line 5 (`replace rank`)
 - The `bysort region:` prefix is stripped before classifying the inner statement
-  as a `gen` (creates). The `sort` on line 4 is classified as `none` (does not
-  create, modify, or remove any variable).
+  as a `gen` (creates). The `sort` on line 4 does not affect a variable, so its
+  `restructures` effect is reported as an `unsupported_effect` unresolved block
+  rather than as a variable attribution.
 
 ---
 
@@ -262,7 +265,8 @@ gen d4 = d3 + 1
 - `ranges`: line 2 (`gen d1 = 1`)
 - The `#delimit ;` blocks are parsed correctly: statements inside the block are
   terminated by `;` until `#delimit cr` or `#delimit clear` resets the mode
-- The file switches delimiter mode twice; the parser handles all transitions
+- The file enters semicolon mode twice and returns to carriage-return mode twice;
+  the parser handles all transitions.
 
 ---
 
@@ -338,8 +342,8 @@ gen other = income * 2
 
 **Result:**
 
-- `ranges`: line 2 (`gen income = 1`), line 3 (`label variable income`)
-- Without `--labels`, the label event on line 3 is excluded from the traced
+- `ranges`: line 3 (`gen income = 1`), line 4 (`label variable income`)
+- Without `--labels`, the label event on line 4 is excluded from the traced
   ranges (but still present in `attributed_ranges` as a `labelled` kind)
 
 !!! note
@@ -400,7 +404,7 @@ reported as a `cross_file_unordered` item in `result.project_diagnostics`.
 Missing inputs may also appear there on a successful partial result. A project
 with no readable roots exits with code `1` and writes no success JSON.
 
-The optional `[registry]` extra is required for project tracing because include
-drivers must come from the upstream `stata-registry>=0.4.0` source-driver
-contract. The package does not execute Stata or make network calls while
-tracing.
+Project tracing requires an installed, conformant `stata-registry>=0.4.0`
+source-driver capability because include drivers must come from the upstream
+registry. The optional `[registry]` extra is one way to install it. The package
+does not execute Stata or make network calls while tracing.

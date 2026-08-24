@@ -1,7 +1,7 @@
 """Stable public data contract for do2screen-py.
 
 All models are frozen Pydantic v2 models built from JSON-lossless primitives.
-Paths are serialized as normalized strings, never :class:`pathlib.Path`.
+Paths are serialized as normalized strings, never ``pathlib.Path``.
 These models are a public, semver-locked contract: downstream consumers embed
 ``TraceResult`` in their own persisted records. Adding an optional field is
 allowed; renaming, removing, or changing the meaning of an existing field is a
@@ -43,8 +43,8 @@ class SourceProvenance(BaseModel):
         path: Normalized filesystem path of the source.
         line_count: Number of physical lines in the source.
         used_delimit: True when the source uses ``#delimit ;`` anywhere.
-        traversal_index: Ordered index of this source in depth-first
-            traversal order (0 is the root/target source).
+        traversal_index: Ordered index of this source in physical-source
+            traversal order (0 is the first registered source).
     """
 
     model_config = ConfigDict(frozen=True)
@@ -101,9 +101,10 @@ class VariableTrace(BaseModel):
 
     Attributes:
         variable: The variable name.
-        ranges: Lifecycle line ranges in source order (created, modified,
-            dropped, labelled). Dependency-only (``referenced``) records are
-            excluded to preserve do2screen (Stata) line-set parity.
+        ranges: Lifecycle line ranges in source order (created, modified, and
+            dropped; labelled when label tracking is enabled). Dependency-only
+            (``referenced``) records are excluded to preserve do2screen (Stata)
+            line-set parity.
         parents: Unique direct dependency variables in first-reference order.
         ancestors: Recursively resolved ancestors (empty when
             ``follow_parents=False``).
@@ -184,7 +185,8 @@ class TraceResult(BaseModel):
 
     Attributes:
         variable: The traced target variable.
-        ranges: Lifecycle ranges of the target variable across all sources.
+        ranges: Lifecycle ranges of the target variable across all sources;
+            label events are included only when label tracking is enabled.
         ancestors: Recursively resolved ancestors of the target.
         attributed_ranges: Complete ordered audit inventory of every attribution
             (lifecycle and dependency references) for all variables.
@@ -192,7 +194,8 @@ class TraceResult(BaseModel):
         coverage: Fraction of executable physical lines covered by at least one
             attributed range. Sentinel 1.0 when there are no executable lines.
         sources: Provenance of every traversed source, in traversal order.
-        source: Provenance of the root/target source.
+        source: Provenance of the root source; in project mode, this is the
+            first requested source and does not establish semantic order.
         input_mode: Project input mode, or ``None`` for a legacy trace.
         project_files: Canonical physical sources accepted by a project input.
         variable_identities: Occurrence-qualified project definition contexts.

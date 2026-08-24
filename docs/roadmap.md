@@ -2,7 +2,8 @@
 
 ## Current Status
 
-**v0.1.0 Alpha** -- Core parsing pipeline is implemented and tested.
+**v0.1.0 Alpha** -- Core parsing, project tracing, CLI, and website are
+implemented and tested.
 
 ## Completed
 
@@ -21,17 +22,18 @@
 
 ## Planned
 
-### Cross-cutting Infrastructure Prerequisites
+### Cross-cutting Infrastructure
 
-- [ ] **Track the upstream `stata-command-registry` repository**
-    The optional `[registry]` extra installs the latest available `main` commit
-    from the upstream repository at installation or explicit upgrade time. The
-    installed revision must satisfy the adapter contract; commands that cannot
-    be resolved are classified as `unknown_command` unresolved blocks.
+- [ ] **Publish `stata-command-registry` to PyPI with `variable_effect` support**
+    The package currently installs the latest available `main` commit through
+    the optional `[registry]` extra. A published compatible release would make
+    normal dependency resolution possible while preserving the registry
+    boundary.
 
 - [ ] **Stata output snapshot infrastructure for CI differential testing**
     Automate running do2screen (Stata) over the test corpus and comparing
-    output against do2screen-py. Currently this requires manual Stata execution.
+    output against do2screen-py. Offline golden/snapshot tests already exist;
+    live reference execution currently requires manual Stata execution.
 
 ## Known Limitations
 

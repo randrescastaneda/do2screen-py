@@ -85,9 +85,15 @@ def main(argv: list[str] | None = None) -> int:
         argv: Optional argument list; ``None`` reads ``sys.argv[1:]``.
 
     Returns:
-        Exit code: ``0`` success, ``1`` unreadable file or registry
-        incompatibility, ``2`` invalid arguments. Writes exactly one
-        ``TraceResult`` JSON document to stdout and diagnostics to stderr.
+        Exit code: ``0`` for a legacy result or complete/partial project
+        result, ``1`` for an unreadable input, project registry incompatibility,
+        or a project with no readable roots, and ``2`` for invalid arguments or
+        manifest schema. Successful invocations write exactly one
+        ``TraceResult`` JSON document to stdout. Project diagnostics are part of
+        that JSON; human-readable failures and warnings go to stderr.
+
+    The legacy form is ``do2screen PATH VARIABLE``. Project forms use
+    ``--variable`` with exactly one of ``--dir``, ``--files``, or ``--manifest``.
     """
     parser = build_parser()
     args = parser.parse_args(argv)

@@ -2,9 +2,9 @@
 
 ``do2screen-py`` (import name ``do2screen``) is a Python reimplementation of
 the tracing logic in do2screen (Stata). Given a do file path and a variable
-name, :func:`trace` returns the physical source lines that create, modify,
-drop, or label that variable, plus the ancestor variables it depends on,
-recursively -- see :class:`TraceResult`.
+name, ``trace`` returns the physical source lines that create, modify,
+drop, or (when requested) label that variable, plus the ancestor variables it
+depends on, recursively -- see ``TraceResult``.
 
 The package is deterministic and offline. Command vocabulary comes from the
 ``stata-command-registry`` dependency; this package supplies the grammar and
@@ -12,11 +12,11 @@ never hardcodes Stata command names.
 
 Public API:
 
-- :func:`trace` -- the entry point.
-- :func:`trace_files`, :func:`trace_directory`, and :func:`trace_manifest` --
+- ``trace`` -- the entry point.
+- ``trace_files``, ``trace_directory``, and ``trace_manifest`` --
   project input modes.
-- :class:`TraceResult` and its public submodels -- the semver-locked contract.
-- :class:`RegistryIncompatibilityError` -- raised when the registry cannot
+- ``TraceResult`` and its public submodels -- the semver-locked contract.
+- ``RegistryIncompatibilityError`` -- raised when the registry cannot
   serve lookups (absent or API-incompatible).
 """
 
