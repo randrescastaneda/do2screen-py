@@ -27,6 +27,7 @@ from do2screen.models import (
     VariableIdentity,
 )
 from do2screen.parser import ParsedEvent, ParsedFile, Parser
+from do2screen.provenance import ProvenanceEvent, build_provenance_chunk
 from do2screen.registry import RegistryAdapter
 from do2screen.trace import _empty_source
 
@@ -51,6 +52,7 @@ class ExecutionEvent:
 
     occurrence: SourceOccurrence
     event: ParsedEvent
+    event_index: int = 0
 
 
 @dataclass
@@ -102,6 +104,7 @@ class DefinitionNode:
     root_order: int
     first_creation_line: int | None = None
     lifecycle_ranges: list[LineRange] = field(default_factory=list)
+    lifecycle_event_ids: list[int] = field(default_factory=list)
     parent_names: list[str] = field(default_factory=list)
     parent_nodes: list[int | None] = field(default_factory=list)
 
@@ -122,6 +125,7 @@ class _LineageState:
     nodes: list[DefinitionNode] = field(default_factory=list)
     by_variable: dict[str, list[DefinitionNode]] = field(default_factory=dict)
     lifecycle_by_variable: dict[str, list[LineRange]] = field(default_factory=dict)
+    lifecycle_event_ids_by_variable: dict[str, list[int]] = field(default_factory=dict)
     active: dict[str, DefinitionNode] = field(default_factory=dict)
     active_by_root: dict[int, dict[str, DefinitionNode]] = field(default_factory=dict)
     known_variables: set[str] = field(default_factory=set)
@@ -330,7 +334,9 @@ def _replay_occurrence(
     active.append(canonical)
     try:
         for event_index, event in enumerate(_ordered_events(parsed.events)):
-            project.execution_events.append(ExecutionEvent(occurrence, event))
+            project.execution_events.append(
+                ExecutionEvent(occurrence, event, event_index)
+            )
             if event.kind != "include":
                 continue
             _replay_include(
@@ -531,8 +537,15 @@ def _build_project_result(
     include_labels: bool,
 ) -> TraceResult:
     state = _build_lineage(project, include_labels=include_labels)
-    ancestors = _resolve_node_ancestors(variable, state) if follow_parents else []
+    if follow_parents:
+        ancestors, reachable_node_ids = _resolve_node_lineage(variable, state)
+    else:
+        ancestors = []
+        reachable_node_ids = {
+            node.node_id for node in state.by_variable.get(variable, [])
+        }
     first_source = _project_source(project)
+    lineage_variables = [variable, *ancestors]
     return TraceResult(
         variable=variable,
         ranges=list(state.lifecycle_by_variable.get(variable, [])),
@@ -547,6 +560,20 @@ def _build_project_result(
         variable_identities=_identities(state, project),
         manifest_path=project.manifest_path,
         project_diagnostics=list(project.diagnostics),
+        provenance_chunk=build_provenance_chunk(
+            variable,
+            lineage_variables,
+            _project_provenance_events(
+                project,
+                state,
+                variable,
+                reachable_node_ids,
+            ),
+            ordering="execution" if project.ordered else "per_source",
+            include_labels=include_labels,
+            unresolved_blocks=project.unresolved,
+            project_diagnostics=project.diagnostics,
+        ),
     )
 
 
@@ -565,7 +592,7 @@ def _build_lineage(
     if not project.ordered:
         state.cross_root_candidates = _build_cross_root_candidate_index(project)
 
-    for execution in project.execution_events:
+    for event_id, execution in enumerate(project.execution_events):
         event = execution.event
         if event.kind != "records" or not event.attributions:
             continue
@@ -573,6 +600,7 @@ def _build_lineage(
             state,
             event,
             execution.occurrence,
+            event_id=event_id,
             ordered=project.ordered,
             include_labels=include_labels,
         )
@@ -589,6 +617,7 @@ def _apply_event(
     event: ParsedEvent,
     occurrence: SourceOccurrence,
     *,
+    event_id: int,
     ordered: bool,
     include_labels: bool,
 ) -> None:
@@ -632,6 +661,9 @@ def _apply_event(
         state.lifecycle_by_variable.setdefault(attribution.variable, []).append(
             attribution.range
         )
+        state.lifecycle_event_ids_by_variable.setdefault(
+            attribution.variable, []
+        ).append(event_id)
         if attribution.kind == "created":
             node = DefinitionNode(
                 node_id=len(state.nodes),
@@ -645,12 +677,14 @@ def _apply_event(
             state.by_variable.setdefault(node.variable, []).append(node)
             active[node.variable] = node
             node.lifecycle_ranges.append(attribution.range)
+            node.lifecycle_event_ids.append(event_id)
             target_nodes.append(node)
             continue
 
         node = active.get(attribution.variable)
         if node is not None:
             node.lifecycle_ranges.append(attribution.range)
+            node.lifecycle_event_ids.append(event_id)
             target_nodes.append(node)
         if attribution.kind == "dropped":
             active.pop(attribution.variable, None)
@@ -851,8 +885,11 @@ def _build_cross_root_candidate_index(
     return result
 
 
-def _resolve_node_ancestors(variable: str, state: _LineageState) -> list[str]:
-    """Resolve occurrence-qualified nodes in first-reference DFS order."""
+def _resolve_node_lineage(
+    variable: str,
+    state: _LineageState,
+) -> tuple[list[str], set[int]]:
+    """Resolve names and occurrence-qualified nodes in first-reference DFS order."""
     result: list[str] = []
     seen_names: set[str] = {variable}
     visited_nodes: set[int] = set()
@@ -876,7 +913,68 @@ def _resolve_node_ancestors(variable: str, state: _LineageState) -> list[str]:
                 parent = state.nodes[parent_id]
                 visited_nodes.add(parent.node_id)
                 stack.append((parent, 0))
-    return result
+    return result, visited_nodes
+
+
+def _resolve_node_ancestors(variable: str, state: _LineageState) -> list[str]:
+    """Resolve occurrence-qualified nodes in first-reference DFS order."""
+    ancestors, _ = _resolve_node_lineage(variable, state)
+    return ancestors
+
+
+def _project_provenance_events(
+    project: ProjectGraph,
+    state: _LineageState,
+    variable: str,
+    reachable_node_ids: set[int],
+) -> list[ProvenanceEvent]:
+    """Select exact lifecycle event occurrences from reachable definition nodes."""
+    selected_event_ids = {
+        event_id
+        for node in state.nodes
+        if node.node_id in reachable_node_ids
+        for event_id in node.lifecycle_event_ids
+    }
+    selected_event_ids.update(
+        event_id
+        for event_id in state.lifecycle_event_ids_by_variable.get(variable, [])
+    )
+    events: list[tuple[int, ProvenanceEvent]] = []
+    for event_id, execution in enumerate(project.execution_events):
+        if event_id not in selected_event_ids:
+            continue
+        events.append(
+            (
+                event_id,
+                ProvenanceEvent(
+                    range=execution.event.range,
+                    attributions=tuple(execution.event.attributions),
+                    occurrence_sequence=(
+                        execution.occurrence.sequence if project.ordered else None
+                    ),
+                ),
+            )
+        )
+    if not project.ordered:
+        events.sort(
+            key=lambda item: (
+                item[1].range.source,
+                item[1].range.start_line,
+                item[1].range.end_line,
+                item[0],
+            )
+        )
+        deduplicated: list[tuple[int, ProvenanceEvent]] = []
+        seen_physical_events: set[tuple[str, int]] = set()
+        for event_id, event in events:
+            execution = project.execution_events[event_id]
+            identity = (execution.occurrence.source, execution.event_index)
+            if identity in seen_physical_events:
+                continue
+            seen_physical_events.add(identity)
+            deduplicated.append((event_id, event))
+        events = deduplicated
+    return [event for _, event in events]
 
 
 def _identities(

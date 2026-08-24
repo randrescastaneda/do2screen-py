@@ -2,16 +2,17 @@
 
 from __future__ import annotations
 
-import json
 import errno
+import json
 
 from do2screen.ingest import directory_spec, files_spec, manifest_spec
 from do2screen.parser import Parser
 from do2screen.project import (
-    build_project_graph,
     assert_project_records_complete,
+    build_project_graph,
     trace_project,
 )
+from do2screen.provenance import render_markdown
 from do2screen.registry import RegistryAdapter
 from tests.mock_registry import MockStataRegistry
 
@@ -44,6 +45,13 @@ def test_ordered_files_merge_lifecycle_and_ancestors(tmp_path):
     assert [range_.source for range_ in result.ranges] == [str(second.resolve())] * 2
     assert result.ancestors == ["base"]
     assert result.ranges[0].source_lines == ["gen x = base + 1"]
+    assert result.provenance_chunk.ordering == "execution"
+    assert [item.range.start_line for item in result.provenance_chunk.statements] == [1, 1, 2]
+    assert [item.range.source for item in result.provenance_chunk.statements] == [
+        str(first.resolve()),
+        str(second.resolve()),
+        str(second.resolve()),
+    ]
     project = build_project_graph(
         files_spec([first, second]),
         registry=RegistryAdapter(module=MockStataRegistry()),
@@ -75,6 +83,13 @@ def test_include_occurrences_are_replayed_at_call_sites_and_cached(tmp_path, mon
     assert [range_.start_line for range_ in result.ranges] == [3, 5]
     assert result.ancestors == ["base", "before"]
     assert len(result.sources) == 2
+    base_statements = [
+        item
+        for item in result.provenance_chunk.statements
+        if item.effects[0].variable == "base"
+    ]
+    assert [item.occurrence_sequence for item in base_statements] == [2, 3]
+    assert [item.range.start_line for item in result.provenance_chunk.statements] == [1, 1, 3, 1, 5]
     project = build_project_graph(
         files_spec([root]),
         registry=RegistryAdapter(module=MockStataRegistry()),
@@ -258,6 +273,18 @@ def test_unordered_directory_reports_cross_file_reference_without_ancestor(tmp_p
     assert diagnostics[0].variable == "base"
     assert str(creator.resolve()) in diagnostics[0].candidate_sources
     assert diagnostics[0].source == str(consumer.resolve())
+    assert result.provenance_chunk.ordering == "per_source"
+    assert result.provenance_chunk.lineage_variables == ["x"]
+    assert result.provenance_chunk.lineage_variables_without_ranges == []
+
+
+def test_unordered_directory_chunk_includes_explicit_warning(tmp_path):
+    write_source(tmp_path, "a.do", "gen x = 1\n")
+    result = project_trace(directory_spec(tmp_path), "x")
+
+    markdown = render_markdown(result)
+    assert result.provenance_chunk.ordering == "per_source"
+    assert "Warning: no global execution sequence is known" in markdown
 
 
 def test_unordered_directory_retains_within_source_dependency(tmp_path):
@@ -323,6 +350,33 @@ def test_ordered_redefinition_uses_latest_context_parents(tmp_path):
     result = project_trace(files_spec([first, second, third]), "x")
 
     assert result.ancestors == ["a", "new_parent"]
+    selected = [
+        (item.range.source, item.range.start_line)
+        for item in result.provenance_chunk.statements
+    ]
+    assert selected == [
+        (str(second.resolve()), 1),
+        (str(second.resolve()), 2),
+        (str(third.resolve()), 1),
+    ]
+    assert str(first.resolve()) not in result.provenance_chunk.text
+    assert "old_parent" not in result.provenance_chunk.text
+
+
+def test_project_target_without_creation_still_has_lifecycle_statement(tmp_path):
+    source = write_source(tmp_path, "modify.do", "replace external = 1\n")
+    result = project_trace(files_spec([source]), "external")
+    assert result.ranges
+    assert result.provenance_chunk.lineage_variables == ["external"]
+    assert [item.range.start_line for item in result.provenance_chunk.statements] == [1]
+
+
+def test_project_external_ancestor_without_lifecycle_range_is_explicit(tmp_path):
+    source = write_source(tmp_path, "external.do", "gen x = external_input + 1\n")
+    result = project_trace(files_spec([source]), "x")
+    assert result.ancestors == ["external_input"]
+    assert result.provenance_chunk.lineage_variables_without_ranges == ["external_input"]
+    assert [item.range.start_line for item in result.provenance_chunk.statements] == [1]
 
 
 def test_ordered_rename_chain_keeps_generic_parent_edges(tmp_path):
@@ -460,6 +514,9 @@ def test_empty_directory_has_coverage_sentinel_and_diagnostic(tmp_path):
     assert result.coverage == 1.0
     assert result.project_files == []
     assert result.sources == []
+    assert result.provenance_chunk.lineage_variables == ["missing"]
+    assert result.provenance_chunk.lineage_variables_without_ranges == ["missing"]
+    assert result.provenance_chunk.project_diagnostics == result.project_diagnostics
 
 
 def test_project_records_cover_same_line_delimiter_statements(tmp_path):
