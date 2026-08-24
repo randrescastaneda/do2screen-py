@@ -17,6 +17,17 @@ def test_simple_lineage(tmp_path):
     assert result.ancestors == ["y"]
     assert result.ranges[0].source == str(path)
     assert result.ranges[0].source_lines == ["gen x = y + 1"]
+    chunk = result.provenance_chunk
+    assert chunk is not None
+    assert chunk.lineage_variables == ["x", "y"]
+    assert [(item.range.start_line, item.effects[0].kind) for item in chunk.statements] == [
+        (1, "created"),
+        (2, "created"),
+    ]
+    assert "* [" in chunk.text
+    assert "gen y = 2" in chunk.text
+    assert "gen x = y + 1" in chunk.text
+    assert chunk.standalone_execution == "not_assessed"
 
 
 def test_recursive_ancestors(tmp_path):
@@ -64,6 +75,8 @@ def test_follow_parents_false(tmp_path):
     result, _ = trace_text(tmp_path, text, "x", follow_parents=False)
     assert result.ancestors == []
     assert [r.start_line for r in result.ranges] == [2]
+    assert result.provenance_chunk.lineage_variables == ["x"]
+    assert [item.range.start_line for item in result.provenance_chunk.statements] == [2]
 
 
 def test_coverage_full(tmp_path):
@@ -93,6 +106,9 @@ def test_target_not_found(tmp_path):
     # the audit inventory and unresolved blocks still reflect the file
     assert result.attributed_ranges
     assert result.coverage == 1.0
+    assert result.provenance_chunk.lineage_variables == ["missing_var"]
+    assert result.provenance_chunk.statements == []
+    assert result.provenance_chunk.lineage_variables_without_ranges == ["missing_var"]
 
 
 def test_labels_excluded_by_default(tmp_path):
@@ -106,6 +122,15 @@ def test_labels_included_when_requested(tmp_path):
     result, _ = trace_text(tmp_path, text, "x", include_labels=True)
     assert len(result.ranges) == 1
     assert result.ranges[0].start_line == 1
+    assert [item.range.start_line for item in result.provenance_chunk.statements] == [1]
+
+
+def test_labels_are_selected_in_provenance_only_when_requested(tmp_path):
+    text = 'gen x = 1\nlabel variable x "label"\n'
+    without_labels, _ = trace_text(tmp_path, text, "x")
+    with_labels, _ = trace_text(tmp_path, text, "x", include_labels=True)
+    assert [item.range.start_line for item in without_labels.provenance_chunk.statements] == [1]
+    assert [item.range.start_line for item in with_labels.provenance_chunk.statements] == [1, 2]
 
 
 def test_include_chain_attributes_child(tmp_path):
@@ -116,6 +141,19 @@ def test_include_chain_attributes_child(tmp_path):
     assert [r.start_line for r in result.ranges] == [2]
     assert len(result.sources) == 2
     assert result.sources[1].traversal_index == 1
+    assert [item.range.start_line for item in result.provenance_chunk.statements] == [1, 2]
+    assert [item.occurrence_sequence for item in result.provenance_chunk.statements] == [2, 1]
+
+
+def test_legacy_repeated_include_keeps_current_nonreplay_behavior(tmp_path):
+    write_do(tmp_path, "util.do", "gen base = 5\n")
+    result, _ = trace_text(
+        tmp_path,
+        'include "util.do"\ngen x = base\ninclude "util.do"\nreplace x = base\n',
+        "x",
+    )
+    assert [item.range.start_line for item in result.provenance_chunk.statements] == [1, 2, 4]
+    assert sum("gen base" in item for item in result.provenance_chunk.text.split("\n\n")) == 1
 
 
 def test_deterministic_output(tmp_path):
@@ -214,6 +252,9 @@ def test_source_lines_preserve_semicolon_multiline_range(tmp_path):
     assert modified.range.start_line == 2
     assert modified.range.end_line == 3
     assert modified.range.source_lines == ["replace x = 1 +", "  2;"]
+    statement = next(item for item in result.provenance_chunk.statements if item.range.start_line == 2)
+    assert statement.range.source_lines == ["replace x = 1 +", "  2;"]
+    assert "2;" in result.provenance_chunk.text
 
 
 def test_source_lines_preserve_replacement_characters(tmp_path, capsys):

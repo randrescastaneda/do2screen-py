@@ -39,6 +39,7 @@ class ParsedEvent:
     command: str | None = None
     effect: str | None = None
     parent_variables: list[str] = field(default_factory=list)
+    include_source: str | None = None
 
 
 @dataclass
@@ -73,6 +74,7 @@ class ParsedGraph:
     attributed_lines: set[int] = field(default_factory=set)
     unresolved_lines: set[int] = field(default_factory=set)
     block_comment_unterminated: bool = False
+    include_labels: bool = False
 
 
 class Parser:
@@ -94,7 +96,7 @@ class Parser:
         """Parse a root source and its legacy depth-first include graph."""
         self._active_paths = set()
         root = str(root_path)
-        graph = ParsedGraph(root_path=root)
+        graph = ParsedGraph(root_path=root, include_labels=self.include_labels)
         self._parse_file_into(root, graph, traversal_index=0)
         graph.attributions = _flatten(graph.files, "attributions")
         graph.executable_lines = _flatten(graph.files, "executable_lines")
@@ -177,7 +179,7 @@ class Parser:
                 context=context,
             )
 
-        include_targets: list[tuple[Statement, str]] = []
+        include_targets: list[tuple[Statement, str, ParsedEvent]] = []
         for statement in statements:
             if _statement_overlaps(statement, covered):
                 continue
@@ -198,7 +200,9 @@ class Parser:
                 continue
             self._classify_statement(parsed, statement, include_targets)
 
-        parsed.include_calls = list(include_targets)
+        parsed.include_calls = [
+            (statement, target) for statement, target, _ in include_targets
+        ]
         if recurse_includes:
             self._traverse_includes(
                 parsed,
@@ -262,12 +266,12 @@ class Parser:
         self,
         parsed: ParsedFile,
         graph: ParsedGraph,
-        include_targets: list[tuple[Statement, str]],
+        include_targets: list[tuple[Statement, str, ParsedEvent]],
         *,
         depth: int,
     ) -> None:
         base_dir = os.path.dirname(parsed.path)
-        for statement, target in include_targets:
+        for statement, target, event in include_targets:
             if not target or self._contains_include_macro(target):
                 self._record_unresolved(
                     parsed,
@@ -308,6 +312,7 @@ class Parser:
                 "no_variable_attribution",
                 {"include": target, "resolved": "true"},
             )
+            event.include_source = os.path.realpath(child_path)
             self._parse_file_into(
                 child_path,
                 graph,
@@ -319,7 +324,7 @@ class Parser:
         self,
         parsed: ParsedFile,
         statement: Statement,
-        include_targets: list[tuple[Statement, str]],
+        include_targets: list[tuple[Statement, str, ParsedEvent]],
     ) -> None:
         if not self.registry.available:
             self._record_unresolved(
@@ -359,19 +364,18 @@ class Parser:
 
         if self._call_is_include(canonical):
             target = self._include_path(statement) or ""
-            include_targets.append((statement, target))
-            parsed.events.append(
-                ParsedEvent(
-                    range=self._line_range(
-                        parsed,
-                        statement.start_line,
-                        statement.end_line,
-                        statement,
-                    ),
-                    include_target=target,
-                    kind="include",
-                )
+            event = ParsedEvent(
+                range=self._line_range(
+                    parsed,
+                    statement.start_line,
+                    statement.end_line,
+                    statement,
+                ),
+                include_target=target,
+                kind="include",
             )
+            include_targets.append((statement, target, event))
+            parsed.events.append(event)
             return
 
         try:
@@ -856,6 +860,7 @@ def _normalize_terminal_records(parsed: ParsedFile) -> None:
                 include_target=event.include_target,
                 attributions=list(event.attributions),
                 parent_variables=list(event.parent_variables),
+                include_source=event.include_source,
             )
             for piece in pieces
         )

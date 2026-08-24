@@ -17,6 +17,7 @@ from collections.abc import Iterable
 from do2screen.ingest import directory_spec, files_spec, manifest_spec
 from do2screen.models import SourceProvenance, TraceResult, VariableTrace
 from do2screen.parser import ParsedGraph, Parser
+from do2screen.provenance import ProvenanceEvent, build_provenance_chunk
 from do2screen.registry import RegistryAdapter
 
 
@@ -102,6 +103,7 @@ def build_result(
         ancestors = []
 
     coverage = coverage_of(graph)
+    lineage_variables = [variable, *ancestors]
 
     return TraceResult(
         variable=variable,
@@ -112,7 +114,66 @@ def build_result(
         coverage=coverage,
         sources=[f.provenance for f in graph.files],
         source=graph.files[0].provenance if graph.files else _empty_source(graph.root_path),
+        provenance_chunk=build_provenance_chunk(
+            variable,
+            lineage_variables,
+            _legacy_provenance_events(graph),
+            ordering="execution",
+            include_labels=graph.include_labels,
+            unresolved_blocks=graph.unresolved,
+            project_diagnostics=[],
+        ),
     )
+
+
+def _legacy_provenance_events(graph: ParsedGraph) -> list[ProvenanceEvent]:
+    """Replay the parsed legacy include graph in call-site order."""
+    by_source = {
+        os.path.realpath(os.path.abspath(parsed.path)): parsed for parsed in graph.files
+    }
+    events: list[ProvenanceEvent] = []
+    active: set[str] = set()
+
+    def replay(parsed, sequence: int) -> None:
+        canonical = os.path.realpath(os.path.abspath(parsed.path))
+        if canonical in active:
+            return
+        active.add(canonical)
+        try:
+            ordered_events = sorted(
+                enumerate(parsed.events),
+                key=lambda item: (
+                    item[1].range.start_line,
+                    item[1].range.end_line,
+                    item[0],
+                ),
+            )
+            for _, event in ordered_events:
+                if event.kind == "records" and event.attributions:
+                    events.append(
+                        ProvenanceEvent(
+                            range=event.range,
+                            attributions=tuple(event.attributions),
+                            occurrence_sequence=sequence,
+                        )
+                    )
+                if event.kind != "include" or event.include_source is None:
+                    continue
+                child = by_source.get(
+                    os.path.realpath(os.path.abspath(event.include_source))
+                )
+                if child is None:
+                    continue
+                nonlocal_occurrence[0] += 1
+                replay(child, nonlocal_occurrence[0])
+        finally:
+            active.remove(canonical)
+
+    nonlocal_occurrence = [0]
+    if graph.files:
+        nonlocal_occurrence[0] = 1
+        replay(graph.files[0], nonlocal_occurrence[0])
+    return events
 
 
 def _empty_source(root_path: str) -> SourceProvenance:
